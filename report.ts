@@ -30,7 +30,7 @@ const DEVICE_ID = crypto.randomUUID();
 const ANONYMOUS_ID = crypto.randomUUID();
 const ACTIVITY_SESSION_ID = crypto.randomUUID();
 
-import { parseOpenCodeUsage, type OCUsageResponse } from "./parse_usage.ts";
+import { type OCUsageResponse, parseOpenCodeUsage } from "./parse_usage.ts";
 
 class AuthError extends Error {}
 
@@ -174,7 +174,9 @@ async function resolveClaudeOrg(token: string): Promise<string> {
     throw new AuthError(`auth failed while resolving org id: ${res.status}`);
   }
   if (!res.ok) {
-    throw new Error(`could not list organizations: ${res.status} ${res.statusText}`);
+    throw new Error(
+      `could not list organizations: ${res.status} ${res.statusText}`,
+    );
   }
   const orgs = await res.json() as Array<{ uuid: string; name?: string }>;
   if (!Array.isArray(orgs) || orgs.length === 0) {
@@ -200,7 +202,9 @@ async function fetchClaudeUsage(token: string): Promise<ClaudeUsageResponse> {
   return await res.json();
 }
 
-async function fetchClaudePrepaidCredits(token: string): Promise<PrepaidCredits> {
+async function fetchClaudePrepaidCredits(
+  token: string,
+): Promise<PrepaidCredits> {
   const orgId = await resolveClaudeOrg(token);
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
@@ -255,10 +259,13 @@ async function fetchOpenCodeUsage(
     { headers: opencodeHeaders(auth) },
   );
 
-  console.error("[aiuse] opencode go page:", JSON.stringify({
-    status: res.status,
-    url: res.url,
-  }));
+  console.error(
+    "[aiuse] opencode go page:",
+    JSON.stringify({
+      status: res.status,
+      url: res.url,
+    }),
+  );
 
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`HTTP ${res.status} from ${res.url}`);
@@ -272,8 +279,12 @@ async function fetchOpenCodeUsage(
     return parseOpenCodeUsage(html);
   } catch (e) {
     const title = extractPageTitle(html);
-    console.error("[aiuse] go page title:", title, "body snippet:",
-      html.substring(0, 200).replace(/\s+/g, " "));
+    console.error(
+      "[aiuse] go page title:",
+      title,
+      "body snippet:",
+      html.substring(0, 200).replace(/\s+/g, " "),
+    );
     throw e;
   }
 }
@@ -332,7 +343,10 @@ async function pollOnce() {
       } else {
         opencodeError = { kind: "network", message };
       }
-      console.error("[aiuse] opencode poll failed:", e instanceof Error ? e.stack || message : message);
+      console.error(
+        "[aiuse] opencode poll failed:",
+        e instanceof Error ? e.stack || message : message,
+      );
     }
   }
 
@@ -382,7 +396,11 @@ async function handle(req: Request): Promise<Response> {
 
   if (url.pathname === "/api/token" && req.method === "POST") {
     const body = await req.json().catch(() => null) as
-      | { claudeToken?: string; opencodeToken?: string; opencodeWorkspaceId?: string }
+      | {
+        claudeToken?: string;
+        opencodeToken?: string;
+        opencodeWorkspaceId?: string;
+      }
       | null;
     if (!body) return json({ ok: false, error: "Invalid body." }, 400);
 
@@ -398,7 +416,10 @@ async function handle(req: Request): Promise<Response> {
       opencodeTok = opencodeTok.slice(5);
     }
     if (opencodeWsId && !opencodeWsId.startsWith("wrk_")) {
-      return json({ ok: false, error: "Workspace ID should start with wrk_ (check the URL)." }, 400);
+      return json({
+        ok: false,
+        error: "Workspace ID should start with wrk_ (check the URL).",
+      }, 400);
     }
 
     if (!claudeTok && !opencodeTok) {
@@ -1265,7 +1286,7 @@ Deno.serve(handle);
 if (Deno.BrowserWindow) {
   const _win = new Deno.BrowserWindow({
     title: "AI Usage",
-    height: 850,
-    width: 1200,
+    height: 1100,
+    width: 1300,
   });
 }

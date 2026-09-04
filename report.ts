@@ -1,10 +1,10 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env
 /// <reference lib="deno.desktop" />
 /**
- * aiuse — usage monitor for Claude.ai and OpenCode Go
+ * aiuse — usage monitor for Claude.ai, ChatGPT, and OpenCode Go
  *
- * Polls both providers independently and displays rate-limit / usage
- * data side-by-side in a single desktop dashboard.
+ * Polls each provider independently and displays rate-limit / usage data
+ * side-by-side in a single desktop dashboard.
  *
  * - Session tokens are entered once in the browser (key screen), never CLI.
  * - Tokens persist via Deno's localStorage across restarts.
@@ -23,6 +23,8 @@ const AUTH_RETRY_MAX = 6;
 
 const CLAUDE_TOKEN_KEY = "claude_session_key";
 const CLAUDE_ORG_KEY = "claude_org_id";
+const CHATGPT_SESSION_0_KEY = "chatgpt_session_token_0";
+const CHATGPT_SESSION_1_KEY = "chatgpt_session_token_1";
 const OPENCODE_TOKEN_KEY = "opencode_auth";
 const OPENCODE_WORKSPACE_KEY = "opencode_workspace_id";
 
@@ -84,6 +86,35 @@ interface PrepaidCredits {
   balance_credits: number;
 }
 
+// ---- types (ChatGPT plan / Codex usage) ----
+interface ChatGPTUsageWindow {
+  used_percent: number;
+  limit_window_seconds: number;
+  reset_after_seconds?: number;
+  reset_at?: number;
+}
+interface ChatGPTRateLimit {
+  allowed?: boolean;
+  limit_reached?: boolean;
+  primary_window?: ChatGPTUsageWindow | null;
+  secondary_window?: ChatGPTUsageWindow | null;
+}
+interface ChatGPTUsageResponse {
+  plan_type?: string;
+  rate_limit?: ChatGPTRateLimit | null;
+  code_review_rate_limit?: ChatGPTRateLimit | null;
+  additional_rate_limits?: Array<{
+    limit_name: string;
+    rate_limit: ChatGPTRateLimit;
+  }>;
+  credits?: {
+    has_credits?: boolean;
+    balance?: string | number | null;
+    unlimited?: boolean;
+    overage_limit_reached?: boolean;
+  } | null;
+}
+
 // ---- types (OpenCode) ----
 interface ProviderError {
   kind: "auth" | "network";
@@ -110,6 +141,26 @@ function clearClaudeOrg() {
   localStorage.removeItem(CLAUDE_ORG_KEY);
 }
 
+function getChatGPTSession0(): string | null {
+  return localStorage.getItem(CHATGPT_SESSION_0_KEY);
+}
+function getChatGPTSession1(): string | null {
+  return localStorage.getItem(CHATGPT_SESSION_1_KEY);
+}
+function setChatGPTSession(session0: string, session1: string) {
+  localStorage.setItem(CHATGPT_SESSION_0_KEY, session0);
+  localStorage.setItem(CHATGPT_SESSION_1_KEY, session1);
+  localStorage.removeItem("chatgpt_access_token");
+}
+function clearChatGPTSession() {
+  localStorage.removeItem(CHATGPT_SESSION_0_KEY);
+  localStorage.removeItem(CHATGPT_SESSION_1_KEY);
+  localStorage.removeItem("chatgpt_access_token");
+}
+function hasChatGPTSession(): boolean {
+  return !!getChatGPTSession0() && !!getChatGPTSession1();
+}
+
 function getOpenCodeToken(): string | null {
   return localStorage.getItem(OPENCODE_TOKEN_KEY);
 }
@@ -132,12 +183,15 @@ function clearOpenCodeWorkspace() {
 // ---- in-memory state ----
 let latestClaudeUsage: ClaudeUsageResponse | null = null;
 let latestClaudePrepaid: PrepaidCredits | null = null;
+let latestChatGPTUsage: ChatGPTUsageResponse | null = null;
 let latestOpenCodeUsage: OCUsageResponse | null = null;
 
 let claudeError: ProviderError | null = null;
+let chatgptError: ProviderError | null = null;
 let opencodeError: ProviderError | null = null;
 
 let authErrorCountClaude = 0;
+let authErrorCountChatGPT = 0;
 let authErrorCountOpenCode = 0;
 let lastFetchedAt: string | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -210,6 +264,61 @@ async function fetchClaudePrepaidCredits(
     `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
     { headers: claudeHeaders(token) },
   );
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthError(`auth failed: ${res.status}`);
+  }
+  if (!res.ok) {
+    throw new Error(`request failed: ${res.status} ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+// ---- ChatGPT API ----
+async function resolveChatGPTAccessToken(
+  session0: string,
+  session1: string,
+): Promise<string> {
+  const cookie = `__Secure-next-auth.session-token.0=${session0}; ` +
+    `__Secure-next-auth.session-token.1=${session1}`;
+  const res = await fetch("https://chatgpt.com/api/auth/session", {
+    headers: {
+      "Accept": "application/json",
+      "Cookie": cookie,
+      "User-Agent":
+        "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthError(`session refresh failed: ${res.status}`);
+  }
+  if (!res.ok) {
+    throw new Error(
+      `session refresh failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  const body = await res.json() as { accessToken?: string };
+  if (!body.accessToken) {
+    throw new AuthError("session refresh returned no access token");
+  }
+  return body.accessToken;
+}
+
+async function fetchChatGPTUsage(
+  session0: string,
+  session1: string,
+): Promise<ChatGPTUsageResponse> {
+  const token = await resolveChatGPTAccessToken(session0, session1);
+  const res = await fetch("https://chatgpt.com/backend-api/wham/usage", {
+    headers: {
+      "Accept": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "oai-device-id": DEVICE_ID,
+      "X-OpenAI-Target-Path": "/backend-api/wham/usage",
+      "X-OpenAI-Target-Route": "/backend-api/wham/usage",
+      "User-Agent":
+        "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
+    },
+  });
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed: ${res.status}`);
   }
@@ -293,6 +402,8 @@ async function fetchOpenCodeUsage(
 function scheduleNext() {
   const hasAuthErrors =
     (authErrorCountClaude > 0 && authErrorCountClaude <= AUTH_RETRY_MAX) ||
+    (authErrorCountChatGPT > 0 &&
+      authErrorCountChatGPT <= AUTH_RETRY_MAX) ||
     (authErrorCountOpenCode > 0 &&
       authErrorCountOpenCode <= AUTH_RETRY_MAX);
   const delay = hasAuthErrors ? AUTH_RETRY_INTERVAL_MS : POLL_INTERVAL_MS;
@@ -301,14 +412,37 @@ function scheduleNext() {
 
 async function pollOnce() {
   const claudeToken = getClaudeToken();
+  const chatgptSession0 = getChatGPTSession0();
+  const chatgptSession1 = getChatGPTSession1();
   const opencodeToken = getOpenCodeToken();
 
-  if (!claudeToken && !opencodeToken) {
+  if (!claudeToken && !hasChatGPTSession() && !opencodeToken) {
     scheduleNext();
     return;
   }
 
   let hadAnySuccess = false;
+
+  if (chatgptSession0 && chatgptSession1) {
+    try {
+      latestChatGPTUsage = await fetchChatGPTUsage(
+        chatgptSession0,
+        chatgptSession1,
+      );
+      authErrorCountChatGPT = 0;
+      chatgptError = null;
+      hadAnySuccess = true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (e instanceof AuthError) {
+        authErrorCountChatGPT++;
+        chatgptError = { kind: "auth", message };
+      } else {
+        chatgptError = { kind: "network", message };
+      }
+      console.error("[aiuse] chatgpt poll failed:", message);
+    }
+  }
 
   if (claudeToken) {
     try {
@@ -367,7 +501,9 @@ function stopPolling() {
   }
 }
 
-if (getClaudeToken() || getOpenCodeToken()) startPolling();
+if (getClaudeToken() || hasChatGPTSession() || getOpenCodeToken()) {
+  startPolling();
+}
 
 // ---- HTTP layer ----
 function json(body: unknown, status = 200): Response {
@@ -389,6 +525,7 @@ async function handle(req: Request): Promise<Response> {
   if (url.pathname === "/api/status" && req.method === "GET") {
     return json({
       hasClaudeToken: !!getClaudeToken(),
+      hasChatGPTToken: hasChatGPTSession(),
       hasOpenCodeToken: !!getOpenCodeToken(),
       lastFetchedAt,
     });
@@ -398,6 +535,8 @@ async function handle(req: Request): Promise<Response> {
     const body = await req.json().catch(() => null) as
       | {
         claudeToken?: string;
+        chatgptSession0?: string;
+        chatgptSession1?: string;
         opencodeToken?: string;
         opencodeWorkspaceId?: string;
       }
@@ -405,6 +544,8 @@ async function handle(req: Request): Promise<Response> {
     if (!body) return json({ ok: false, error: "Invalid body." }, 400);
 
     let claudeTok = body.claudeToken?.trim();
+    let chatgptSession0 = body.chatgptSession0?.trim();
+    let chatgptSession1 = body.chatgptSession1?.trim();
     let opencodeTok = body.opencodeToken?.trim();
     let opencodeWsId = body.opencodeWorkspaceId?.trim();
 
@@ -412,6 +553,14 @@ async function handle(req: Request): Promise<Response> {
     if (claudeTok && claudeTok.startsWith("sessionKey=")) {
       claudeTok = claudeTok.slice(11);
     }
+    chatgptSession0 = chatgptSession0?.replace(
+      /^__Secure-next-auth\.session-token\.0=/,
+      "",
+    ).replace(/;$/, "");
+    chatgptSession1 = chatgptSession1?.replace(
+      /^__Secure-next-auth\.session-token\.1=/,
+      "",
+    ).replace(/;$/, "");
     if (opencodeTok && opencodeTok.startsWith("auth=")) {
       opencodeTok = opencodeTok.slice(5);
     }
@@ -422,9 +571,9 @@ async function handle(req: Request): Promise<Response> {
       }, 400);
     }
 
-    if (!claudeTok && !opencodeTok) {
+    if (!claudeTok && !chatgptSession0 && !chatgptSession1 && !opencodeTok) {
       return json(
-        { ok: false, error: "Paste at least one session key." },
+        { ok: false, error: "Paste at least one provider token." },
         400,
       );
     }
@@ -433,6 +582,16 @@ async function handle(req: Request): Promise<Response> {
       setClaudeToken(claudeTok);
       clearClaudeOrg();
       claudeError = null;
+    }
+    if (!!chatgptSession0 !== !!chatgptSession1) {
+      return json({
+        ok: false,
+        error: "Both ChatGPT session cookie parts are required.",
+      }, 400);
+    }
+    if (chatgptSession0 && chatgptSession1) {
+      setChatGPTSession(chatgptSession0, chatgptSession1);
+      chatgptError = null;
     }
     if (opencodeTok) {
       setOpenCodeToken(opencodeTok);
@@ -450,6 +609,10 @@ async function handle(req: Request): Promise<Response> {
         usage: latestClaudeUsage,
         prepaidCredits: latestClaudePrepaid,
         error: claudeError,
+      },
+      chatgpt: {
+        usage: latestChatGPTUsage,
+        error: chatgptError,
       },
       opencode: {
         usage: latestOpenCodeUsage,
@@ -473,6 +636,12 @@ async function handle(req: Request): Promise<Response> {
       claudeError = null;
       authErrorCountClaude = 0;
     }
+    if (provider === "chatgpt" || provider === "all") {
+      clearChatGPTSession();
+      latestChatGPTUsage = null;
+      chatgptError = null;
+      authErrorCountChatGPT = 0;
+    }
     if (provider === "opencode" || provider === "all") {
       clearOpenCodeToken();
       clearOpenCodeWorkspace();
@@ -481,7 +650,7 @@ async function handle(req: Request): Promise<Response> {
       authErrorCountOpenCode = 0;
     }
 
-    if (!getClaudeToken() && !getOpenCodeToken()) {
+    if (!getClaudeToken() && !hasChatGPTSession() && !getOpenCodeToken()) {
       stopPolling();
     }
 
@@ -650,6 +819,18 @@ const PAGE_HTML = `<!DOCTYPE html>
 
       <div class="provider-field">
         <div class="provider-field-head">
+          <label for="chatgpt-session-0-input">ChatGPT session cookies</label>
+          <span class="connected-badge" id="chatgpt-connected-badge">✓ connected</span>
+        </div>
+        <input id="chatgpt-session-0-input" type="password" placeholder="__Secure-next-auth.session-token.0" autocomplete="off" spellcheck="false" />
+        <input id="chatgpt-session-1-input" type="password" placeholder="__Secure-next-auth.session-token.1" autocomplete="off" spellcheck="false" style="margin-top:6px" />
+        <div class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy the values of <b>session-token.0</b> and <b>session-token.1</b></div>
+        <button class="provider-connect" id="chatgpt-connect">Connect ChatGPT</button>
+        <div class="provider-error-msg" id="chatgpt-key-error"></div>
+      </div>
+
+      <div class="provider-field">
+        <div class="provider-field-head">
           <label for="opencode-key-input">OpenCode <code>auth</code> cookie</label>
           <span class="connected-badge" id="opencode-connected-badge">✓ connected</span>
         </div>
@@ -667,7 +848,7 @@ const PAGE_HTML = `<!DOCTYPE html>
       <a class="back-to-dash" id="back-to-dash">← back to dashboard</a>
       <div class="key-help">
         Stored locally on this machine. Only used to poll your own usage.<br>
-        <b>Claude:</b> cookie named <b>sessionKey</b> &nbsp;|&nbsp; <b>OpenCode:</b> cookie named <b>auth</b>
+        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> two session-token cookies &nbsp;|&nbsp; <b>OpenCode:</b> auth
       </div>
     </div>
   </div>
@@ -681,12 +862,13 @@ const PAGE_HTML = `<!DOCTYPE html>
           <span class="clock">local time <span id="clock">--:--:--</span></span>
           <a class="reset-link" id="connect-provider">connect provider</a>
           <a class="reset-link" id="reset-claude">reset claude</a>
+          <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
           <a class="reset-link" id="reset-opencode">reset opencode</a>
         </div>
       </div>
 
       <h1>Rate limit status</h1>
-      <div class="sub">Claude.ai and OpenCode Go usage, refreshed automatically.</div>
+      <div class="sub">Claude.ai, ChatGPT, and OpenCode Go limits, refreshed automatically.</div>
 
       <!---------- Claude section ---------->
       <section class="provider-section" id="claude-section">
@@ -742,6 +924,26 @@ const PAGE_HTML = `<!DOCTYPE html>
             Extra usage credits cover you once a plan limit is hit.
             <a href="https://support.claude.com/articles/12429409" target="_blank" rel="noopener">Learn more &rarr;</a>
           </div>
+        </div>
+      </section>
+
+      <!---------- ChatGPT section ---------->
+      <section class="provider-section" id="chatgpt-section">
+        <div class="provider-head">
+          <h2>ChatGPT</h2>
+          <span class="provider-badge ok" id="chatgpt-badge">connected</span>
+        </div>
+        <div class="provider-error" id="chatgpt-error" style="display:none">
+          <div class="msg"><b id="chatgpt-error-kind">error</b><span id="chatgpt-error-msg"></span></div>
+          <button id="chatgpt-error-dismiss">dismiss</button>
+        </div>
+
+        <div class="grid2" id="chatgpt-limits"></div>
+
+        <div class="panel footer-panel" data-tag="account">
+          <div class="spend-row"><span>Plan</span><span class="tag" id="chatgpt-plan">--</span></div>
+          <div class="spend-row" style="margin-top:10px"><span>Credit balance</span><span id="chatgpt-credits">--</span></div>
+          <div class="note">ChatGPT-plan usage reported for Codex and Work. Regular ChatGPT chat, images, voice, and uploads have separate limits.</div>
         </div>
       </section>
 
@@ -875,18 +1077,22 @@ const PAGE_HTML = `<!DOCTYPE html>
   // Resets store the absolute reset time (ISO string) for countdown calculation.
   // For OpenCode we only get resetInSec from the API, so we compute the absolute
   // time at the moment we receive the data.
-  var resets = {}; // { fiveHour, sevenDay, ocRolling, ocWeekly, ocMonthly }
+  var resets = {}; // absolute reset times by provider/window
+  var chatgptResetKeys = [];
   var lastFetchedAt = null;
   var pollHandle = null;
 
   // ---- provider visibility ----
   var hasClaude = false;
+  var hasChatGPT = false;
   var hasOpenCode = false;
 
   function updateProviderSections(){
     byId('claude-section').style.display = hasClaude ? '' : 'none';
+    byId('chatgpt-section').style.display = hasChatGPT ? '' : 'none';
     byId('opencode-section').style.display = hasOpenCode ? '' : 'none';
     byId('reset-claude').style.display = hasClaude ? '' : 'none';
+    byId('reset-chatgpt').style.display = hasChatGPT ? '' : 'none';
     byId('reset-opencode').style.display = hasOpenCode ? '' : 'none';
   }
 
@@ -911,6 +1117,9 @@ const PAGE_HTML = `<!DOCTYPE html>
   // Dismiss buttons
   byId('claude-error-dismiss').addEventListener('click', function(){
     byId('claude-error').style.display = 'none';
+  });
+  byId('chatgpt-error-dismiss').addEventListener('click', function(){
+    byId('chatgpt-error').style.display = 'none';
   });
   byId('opencode-error-dismiss').addEventListener('click', function(){
     byId('opencode-error').style.display = 'none';
@@ -1051,6 +1260,113 @@ const PAGE_HTML = `<!DOCTYPE html>
     });
   }
 
+  // ---- ChatGPT rendering ----
+  function fmtWindow(seconds){
+    if(!seconds) return 'usage window';
+    if(seconds % 604800 === 0) return (seconds / 604800) + '-week window';
+    if(seconds % 86400 === 0) return (seconds / 86400) + '-day window';
+    if(seconds % 3600 === 0) return (seconds / 3600) + '-hour window';
+    return fmtCountdownReal(seconds * 1000) + ' window';
+  }
+
+  function chatgptResetAt(win){
+    if(win.reset_at != null) return new Date(win.reset_at * 1000).toISOString();
+    if(win.reset_after_seconds != null) return new Date(Date.now() + win.reset_after_seconds * 1000).toISOString();
+    return null;
+  }
+
+  function appendChatGPTWindow(container, name, win, tag){
+    if(!win) return;
+    var key = 'chatgpt-' + chatgptResetKeys.length;
+    var pct = Number(win.used_percent || 0);
+    var resetAt = chatgptResetAt(win);
+    resets[key] = resetAt;
+    chatgptResetKeys.push(key);
+
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.setAttribute('data-tag', tag);
+
+    var head = document.createElement('div');
+    head.className = 'row-head';
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = name + ' · ' + fmtWindow(win.limit_window_seconds);
+    var status = document.createElement('div');
+    status.className = 'status';
+    status.id = 'status-' + key;
+    head.appendChild(label);
+    head.appendChild(status);
+
+    var pctEl = document.createElement('div');
+    pctEl.className = 'pct';
+    var pctValue = document.createElement('span');
+    pctValue.textContent = String(Math.round(pct));
+    var pctUnit = document.createElement('small');
+    pctUnit.textContent = '%';
+    pctEl.appendChild(pctValue);
+    pctEl.appendChild(pctUnit);
+
+    var meter = document.createElement('div');
+    meter.className = 'meter';
+    meter.id = 'meter-' + key;
+    var countdown = document.createElement('div');
+    countdown.className = 'countdown';
+    countdown.appendChild(document.createTextNode('resets in '));
+    var countdownValue = document.createElement('span');
+    countdownValue.id = 'cd-' + key;
+    countdownValue.textContent = resetAt ? fmtCountdownReal(new Date(resetAt) - new Date()) : '--';
+    countdown.appendChild(countdownValue);
+
+    panel.appendChild(head);
+    panel.appendChild(pctEl);
+    panel.appendChild(meter);
+    panel.appendChild(countdown);
+    container.appendChild(panel);
+    buildMeter(meter.id, pct);
+    applyStatus(status.id, pct);
+  }
+
+  function appendChatGPTRateLimit(container, name, limit, tag){
+    if(!limit) return;
+    appendChatGPTWindow(container, name, limit.primary_window, tag);
+    appendChatGPTWindow(container, name, limit.secondary_window, tag);
+  }
+
+  function renderChatGPTUsage(data, error){
+    if(error){
+      renderProviderError('chatgpt', error);
+      return;
+    }
+    clearProviderError('chatgpt');
+    if(!data) return;
+
+    chatgptResetKeys.forEach(function(key){ delete resets[key]; });
+    chatgptResetKeys = [];
+    var container = byId('chatgpt-limits');
+    container.innerHTML = '';
+    appendChatGPTRateLimit(container, 'Included usage', data.rate_limit, 'plan limit');
+    appendChatGPTRateLimit(container, 'Code review', data.code_review_rate_limit, 'feature limit');
+    (data.additional_rate_limits || []).forEach(function(item){
+      appendChatGPTRateLimit(container, item.limit_name, item.rate_limit, 'model limit');
+    });
+
+    if(container.childNodes.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'no-provider';
+      empty.textContent = 'No rate-limit windows were reported for this account.';
+      container.appendChild(empty);
+    }
+
+    byId('chatgpt-plan').textContent = data.plan_type || 'unknown';
+    var credits = data.credits || {};
+    var creditsText = 'none';
+    if(credits.unlimited) creditsText = 'unlimited';
+    else if(credits.balance != null) creditsText = String(credits.balance);
+    else if(credits.has_credits) creditsText = 'available';
+    byId('chatgpt-credits').textContent = creditsText;
+  }
+
   // ---- OpenCode rendering ----
   function renderOCWindow(prefix, win){
     var pct = win.usagePercent || 0;
@@ -1082,6 +1398,7 @@ const PAGE_HTML = `<!DOCTYPE html>
     fetch('/api/usage').then(function(r){
       return r.json().then(function(body){
         if(body.claude) renderClaudeUsage(body.claude.usage, body.claude.prepaidCredits, body.claude.error);
+        if(body.chatgpt) renderChatGPTUsage(body.chatgpt.usage, body.chatgpt.error);
         if(body.opencode) renderOpenCodeUsage(body.opencode.usage, body.opencode.error);
         lastFetchedAt = body.lastFetchedAt;
         byId('updated-ago').textContent = fmtAgo(lastFetchedAt);
@@ -1113,6 +1430,17 @@ const PAGE_HTML = `<!DOCTYPE html>
       byId('claude-connect').style.display = '';
       byId('claude-connected-badge').style.display = 'none';
     }
+    if (hasChatGPT) {
+      byId('chatgpt-session-0-input').style.display = 'none';
+      byId('chatgpt-session-1-input').style.display = 'none';
+      byId('chatgpt-connect').style.display = 'none';
+      byId('chatgpt-connected-badge').style.display = 'inline';
+    } else {
+      byId('chatgpt-session-0-input').style.display = '';
+      byId('chatgpt-session-1-input').style.display = '';
+      byId('chatgpt-connect').style.display = '';
+      byId('chatgpt-connected-badge').style.display = 'none';
+    }
     if (hasOpenCode) {
       byId('opencode-key-input').style.display = 'none';
       byId('opencode-workspace-input').style.display = 'none';
@@ -1125,7 +1453,7 @@ const PAGE_HTML = `<!DOCTYPE html>
       byId('opencode-connected-badge').style.display = 'none';
     }
     // Show "back to dashboard" only if at least one provider is connected
-    byId('back-to-dash').style.display = (hasClaude || hasOpenCode) ? '' : 'none';
+    byId('back-to-dash').style.display = (hasClaude || hasChatGPT || hasOpenCode) ? '' : 'none';
   }
 
   function showKeyScreenWithState() {
@@ -1133,9 +1461,11 @@ const PAGE_HTML = `<!DOCTYPE html>
     showScreen('key');
   }
 
-  function connectProvider(claudeToken, opencodeToken, opencodeWorkspaceId) {
+  function connectProvider(claudeToken, chatgptSession0, chatgptSession1, opencodeToken, opencodeWorkspaceId) {
     var body = {};
     if (claudeToken) body.claudeToken = claudeToken;
+    if (chatgptSession0) body.chatgptSession0 = chatgptSession0;
+    if (chatgptSession1) body.chatgptSession1 = chatgptSession1;
     if (opencodeToken) body.opencodeToken = opencodeToken;
     if (opencodeWorkspaceId) body.opencodeWorkspaceId = opencodeWorkspaceId;
 
@@ -1155,7 +1485,7 @@ const PAGE_HTML = `<!DOCTYPE html>
     }
     byId('claude-connect').disabled = true;
     byId('claude-key-error').textContent = '';
-    connectProvider(token, undefined).then(function(res) {
+    connectProvider(token, undefined, undefined, undefined, undefined).then(function(res) {
       byId('claude-connect').disabled = false;
       if (res.ok) {
         byId('claude-key-input').value = '';
@@ -1166,6 +1496,31 @@ const PAGE_HTML = `<!DOCTYPE html>
     }).catch(function() {
       byId('claude-connect').disabled = false;
       byId('claude-key-error').textContent = 'Request failed. Is the server running?';
+    });
+  });
+
+  // ChatGPT connect button
+  byId('chatgpt-connect').addEventListener('click', function() {
+    var session0 = byId('chatgpt-session-0-input').value.trim();
+    var session1 = byId('chatgpt-session-1-input').value.trim();
+    if (!session0 || !session1) {
+      byId('chatgpt-key-error').textContent = 'Paste both session cookie parts.';
+      return;
+    }
+    byId('chatgpt-connect').disabled = true;
+    byId('chatgpt-key-error').textContent = '';
+    connectProvider(undefined, session0, session1, undefined, undefined).then(function(res) {
+      byId('chatgpt-connect').disabled = false;
+      if (res.ok) {
+        byId('chatgpt-session-0-input').value = '';
+        byId('chatgpt-session-1-input').value = '';
+        checkStatusAndShow();
+      } else {
+        byId('chatgpt-key-error').textContent = res.error || 'Something went wrong.';
+      }
+    }).catch(function() {
+      byId('chatgpt-connect').disabled = false;
+      byId('chatgpt-key-error').textContent = 'Request failed. Is the server running?';
     });
   });
 
@@ -1183,7 +1538,7 @@ const PAGE_HTML = `<!DOCTYPE html>
     }
     byId('opencode-connect').disabled = true;
     byId('opencode-key-error').textContent = '';
-    connectProvider(undefined, token, wsId).then(function(res) {
+    connectProvider(undefined, undefined, undefined, token, wsId).then(function(res) {
       byId('opencode-connect').disabled = false;
       if (res.ok) {
         byId('opencode-key-input').value = '';
@@ -1202,13 +1557,19 @@ const PAGE_HTML = `<!DOCTYPE html>
   byId('claude-key-input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') byId('claude-connect').click();
   });
+  byId('chatgpt-session-0-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') byId('chatgpt-connect').click();
+  });
+  byId('chatgpt-session-1-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') byId('chatgpt-connect').click();
+  });
   byId('opencode-key-input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') byId('opencode-connect').click();
   });
 
   // "back to dashboard" link
   byId('back-to-dash').addEventListener('click', function() {
-    if (hasClaude || hasOpenCode) {
+    if (hasClaude || hasChatGPT || hasOpenCode) {
       showScreen('dashboard');
     }
   });
@@ -1236,6 +1597,13 @@ const PAGE_HTML = `<!DOCTYPE html>
     resets.sevenDay = null;
     resetProvider('claude');
   });
+  byId('reset-chatgpt').addEventListener('click', function(){
+    hasChatGPT = false;
+    updateProviderSections();
+    chatgptResetKeys.forEach(function(key){ delete resets[key]; });
+    chatgptResetKeys = [];
+    resetProvider('chatgpt');
+  });
   byId('reset-opencode').addEventListener('click', function(){
     hasOpenCode = false;
     updateProviderSections();
@@ -1249,9 +1617,10 @@ const PAGE_HTML = `<!DOCTYPE html>
   function checkStatusAndShow(){
     fetch('/api/status').then(function(r){ return r.json(); }).then(function(s){
       hasClaude = s.hasClaudeToken;
+      hasChatGPT = s.hasChatGPTToken;
       hasOpenCode = s.hasOpenCodeToken;
       updateProviderSections();
-      if(s.hasClaudeToken || s.hasOpenCodeToken){
+      if(s.hasClaudeToken || s.hasChatGPTToken || s.hasOpenCodeToken){
         showScreen('dashboard');
         startDashboardPolling();
       } else {
@@ -1269,6 +1638,10 @@ const PAGE_HTML = `<!DOCTYPE html>
     byId('clock').textContent = now.toLocaleTimeString();
     if(resets.fiveHour) byId('cd-5h').textContent = fmtCountdownReal(new Date(resets.fiveHour) - now);
     if(resets.sevenDay) byId('cd-7d').textContent = fmtCountdownReal(new Date(resets.sevenDay) - now);
+    chatgptResetKeys.forEach(function(key){
+      var el = byId('cd-' + key);
+      if(el && resets[key]) el.textContent = fmtCountdownReal(new Date(resets[key]) - now);
+    });
     if(resets['oc-rolling']) byId('cd-oc-rolling').textContent = fmtCountdownReal(new Date(resets['oc-rolling']) - now);
     if(resets['oc-weekly']) byId('cd-oc-weekly').textContent = fmtCountdownReal(new Date(resets['oc-weekly']) - now);
     if(resets['oc-monthly']) byId('cd-oc-monthly').textContent = fmtCountdownReal(new Date(resets['oc-monthly']) - now);

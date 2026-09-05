@@ -727,48 +727,48 @@ const PAGE_HTML = `<!DOCTYPE html>
   .back-to-dash:hover{color:var(--text);}
 
   /* ---------- dashboard ---------- */
-  #dashboard{padding: 40px 20px 60px;}
-  .wrap{max-width:900px;margin:0 auto;}
-  .topbar{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--grid);padding-bottom:14px;margin-bottom:26px;flex-wrap:wrap;gap:8px;}
+  #dashboard{padding:22px 24px 28px;}
+  .wrap{max-width:1240px;margin:0 auto;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--grid);padding-bottom:10px;margin-bottom:15px;flex-wrap:wrap;gap:8px;}
   .brand{font-size:13px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;}
   .brand b{color:var(--green);}
-  .topbar-right{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--dim);}
+  .topbar-right{display:flex;align-items:center;gap:12px;font-size:11px;color:var(--dim);}
   .clock span{color:var(--text);}
   .reset-link{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer;}
   .reset-link:hover{color:var(--text);border-color:var(--text);}
-  h1{font-size:22px;margin:0 0 4px;font-weight:600;letter-spacing:.02em;}
-  .sub{color:var(--dim);font-size:13px;margin-bottom:28px;}
+  h1{font-size:19px;margin:0 0 3px;font-weight:600;letter-spacing:.02em;}
+  .sub{color:var(--dim);font-size:11.5px;margin-bottom:18px;}
 
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;}
-  @media(max-width:800px){.grid3{grid-template-columns:1fr 1fr;}}
-  @media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr;}}
+  .providers-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;}
+  .grid2,.grid3{display:grid;grid-template-columns:1fr;gap:10px;}
+  @media(max-width:980px){.providers-grid{grid-template-columns:1fr 1fr;}}
+  @media(max-width:660px){#dashboard{padding:16px 12px 24px;}.providers-grid{grid-template-columns:1fr;}}
 
-  .panel{background:var(--panel);border:1px solid var(--grid);border-radius:2px;padding:20px 22px 22px;position:relative;}
-  .panel::before{content:attr(data-tag);position:absolute;top:-9px;left:16px;background:var(--bg);padding:0 8px;font-size:10px;letter-spacing:.14em;color:var(--dim);}
-  .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-  .row-head .label{font-size:14px;color:var(--text);}
-  .status{font-size:10px;letter-spacing:.1em;padding:2px 7px;border-radius:2px;border:1px solid var(--green-dim);color:var(--green);text-transform:uppercase;}
-  .pct{font-size:38px;font-weight:700;line-height:1;margin-bottom:2px;font-variant-numeric:tabular-nums;}
-  .pct small{font-size:15px;font-weight:400;color:var(--dim);}
-  .meter{display:flex;gap:3px;margin:14px 0 12px;}
-  .cell{flex:1;height:16px;background:#141a17;border-radius:1px;}
-  .meta{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);border-top:1px dashed var(--grid);padding-top:10px;margin-top:4px;}
+  .panel{background:var(--panel);border:1px solid var(--grid);border-radius:3px;padding:13px 14px 12px;position:relative;}
+  .panel::before{content:attr(data-tag);position:absolute;top:-7px;left:11px;background:var(--bg);padding:0 6px;font-size:8px;letter-spacing:.13em;color:var(--dim);text-transform:uppercase;}
+  .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;}
+  .row-head .label{font-size:11.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .status{font-size:8px;letter-spacing:.08em;padding:2px 5px;border-radius:2px;border:1px solid var(--green-dim);color:var(--green);text-transform:uppercase;flex-shrink:0;}
+  .pct{font-size:27px;font-weight:700;line-height:1;margin-bottom:1px;font-variant-numeric:tabular-nums;}
+  .pct small{font-size:11px;font-weight:400;color:var(--dim);}
+  .meter{display:flex;gap:2px;margin:8px 0 7px;}
+  .cell{flex:1;height:8px;background:#141a17;border-radius:1px;}
+  .meta{display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);border-top:1px dashed var(--grid);padding-top:6px;margin-top:4px;}
   .meta b{color:var(--text);font-weight:500;}
-  .countdown{font-size:12px;color:var(--dim);margin-top:2px;}
+  .countdown{font-size:10px;color:var(--dim);margin-top:1px;}
   .countdown span{color:var(--amber);font-variant-numeric:tabular-nums;}
 
   /* ---------- provider sections ---------- */
-  .provider-section{margin-bottom:30px;}
-  .provider-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--grid);}
-  .provider-head h2{margin:0;font-size:16px;font-weight:600;color:var(--text);}
-  .provider-badge{font-size:10px;letter-spacing:.08em;padding:3px 8px;border-radius:2px;border:1px solid var(--grid);color:var(--dim);text-transform:uppercase;}
+  .provider-section{margin:0;min-width:0;}
+  .provider-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--grid);}
+  .provider-head h2{margin:0;font-size:14px;font-weight:600;color:var(--text);}
+  .provider-badge{font-size:8px;letter-spacing:.08em;padding:2px 6px;border-radius:2px;border:1px solid var(--grid);color:var(--dim);text-transform:uppercase;}
   .provider-badge.ok{border-color:var(--green-dim);color:var(--green);}
   .provider-badge.err{border-color:var(--red);color:var(--red);}
   .provider-error{
     display:flex;align-items:center;justify-content:space-between;gap:12px;
     background:#1a1210;border:1px solid var(--red);color:#f2b8ae;
-    font-size:12px;padding:8px 12px;border-radius:2px;margin-bottom:14px;
+    font-size:10px;padding:7px 9px;border-radius:2px;margin-bottom:10px;
   }
   .provider-error b{color:var(--red);text-transform:uppercase;font-size:10px;letter-spacing:.08em;display:block;margin-bottom:2px;}
   .provider-error button{
@@ -784,19 +784,27 @@ const PAGE_HTML = `<!DOCTYPE html>
   .no-provider a{color:var(--green);cursor:pointer;border-bottom:1px dotted var(--green-dim);}
 
   /* ---------- claude-specific ---------- */
-  #scoped-panel{margin-top:18px;}
-  .scoped-row + .scoped-row{margin-top:16px;padding-top:16px;border-top:1px dashed var(--grid);}
+  #scoped-panel{margin-top:10px;}
+  .scoped-row + .scoped-row{margin-top:9px;padding-top:9px;border-top:1px dashed var(--grid);}
   .scoped-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
   .scoped-name{font-size:13px;color:var(--text);}
-  .scoped-pct{font-size:20px;font-weight:700;margin-bottom:8px;font-variant-numeric:tabular-nums;}
-  .footer-panel{margin-top:18px;}
-  .spend-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;}
+  .scoped-pct{font-size:16px;font-weight:700;margin-bottom:4px;font-variant-numeric:tabular-nums;}
+  .footer-panel{margin-top:10px;}
+  .spend-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;}
   .spend-row .tag{font-size:10px;letter-spacing:.1em;color:var(--dim);border:1px solid var(--grid);padding:2px 6px;border-radius:2px;}
-  .note{margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.6;}
+  .note{margin-top:9px;font-size:9.5px;color:var(--dim);line-height:1.5;}
   .note a{color:var(--green);text-decoration:none;border-bottom:1px dotted var(--green-dim);}
-  .legend{display:flex;gap:18px;margin-top:26px;font-size:11px;color:var(--dim);flex-wrap:wrap;}
+  .provider-details{margin-top:9px;}
+  .provider-details summary{color:var(--dim);font-size:9.5px;cursor:pointer;list-style:none;padding:5px 1px;border-top:1px dashed var(--grid);}
+  .provider-details summary::before{content:'+ ';color:var(--green);}
+  .provider-details[open] summary::before{content:'− ';}
+  .actions-menu{position:relative;}
+  .actions-menu summary{cursor:pointer;list-style:none;color:var(--text);border:1px solid var(--grid);padding:4px 7px;border-radius:2px;}
+  .actions-menu summary:hover{border-color:var(--green-dim);}
+  .actions-popover{position:absolute;right:0;top:calc(100% + 5px);z-index:10;min-width:145px;background:var(--panel);border:1px solid var(--grid);padding:5px 8px;display:flex;flex-direction:column;gap:6px;box-shadow:0 8px 24px #0008;}
+  .legend{display:flex;gap:14px;margin-top:16px;font-size:9.5px;color:var(--dim);flex-wrap:wrap;}
   .legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
-  .stamp{margin-top:30px;font-size:10.5px;color:var(--dim);opacity:.7;text-align:right;}
+  .stamp{margin-top:10px;font-size:9px;color:var(--dim);opacity:.7;text-align:right;}
 </style>
 </head>
 <body>
@@ -804,7 +812,7 @@ const PAGE_HTML = `<!DOCTYPE html>
   <div id="key-screen" style="display:none">
     <div class="key-card">
       <h2>Connect your sessions</h2>
-      <p>Paste your session tokens to monitor usage. Connect one or both providers — each polls independently.</p>
+      <p>Paste your session tokens to monitor usage. Connect any providers you use — each polls independently.</p>
 
       <div class="provider-field">
         <div class="provider-field-head">
@@ -860,15 +868,22 @@ const PAGE_HTML = `<!DOCTYPE html>
         <div class="topbar-right">
           <span id="updated-ago">--</span>
           <span class="clock">local time <span id="clock">--:--:--</span></span>
-          <a class="reset-link" id="connect-provider">connect provider</a>
-          <a class="reset-link" id="reset-claude">reset claude</a>
-          <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
-          <a class="reset-link" id="reset-opencode">reset opencode</a>
+          <details class="actions-menu">
+            <summary>manage</summary>
+            <div class="actions-popover">
+              <a class="reset-link" id="connect-provider">connect provider</a>
+              <a class="reset-link" id="reset-claude">reset claude</a>
+              <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
+              <a class="reset-link" id="reset-opencode">reset opencode</a>
+            </div>
+          </details>
         </div>
       </div>
 
       <h1>Rate limit status</h1>
       <div class="sub">Claude.ai, ChatGPT, and OpenCode Go limits, refreshed automatically.</div>
+
+      <div class="providers-grid">
 
       <!---------- Claude section ---------->
       <section class="provider-section" id="claude-section">
@@ -907,24 +922,27 @@ const PAGE_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <div class="panel" data-tag="model-scoped weekly" id="scoped-panel" style="display:none">
-          <div id="scoped-limits"></div>
-        </div>
+        <details class="provider-details">
+          <summary>model and credit details</summary>
+          <div class="panel" data-tag="model-scoped weekly" id="scoped-panel" style="display:none">
+            <div id="scoped-limits"></div>
+          </div>
 
-        <div class="panel footer-panel" data-tag="spend / credits">
-          <div class="spend-row">
-            <span>Usage-based spend</span>
-            <span class="tag" id="spend-tag">--</span>
+          <div class="panel footer-panel" data-tag="spend / credits">
+            <div class="spend-row">
+              <span>Usage-based spend</span>
+              <span class="tag" id="spend-tag">--</span>
+            </div>
+            <div class="spend-row" id="credits-row" style="margin-top:10px;display:none">
+              <span>Extra credits used</span>
+              <span id="credits-used">--</span>
+            </div>
+            <div class="note">
+              Extra usage credits cover you once a plan limit is hit.
+              <a href="https://support.claude.com/articles/12429409" target="_blank" rel="noopener">Learn more &rarr;</a>
+            </div>
           </div>
-          <div class="spend-row" id="credits-row" style="margin-top:10px;display:none">
-            <span>Extra credits used</span>
-            <span id="credits-used">--</span>
-          </div>
-          <div class="note">
-            Extra usage credits cover you once a plan limit is hit.
-            <a href="https://support.claude.com/articles/12429409" target="_blank" rel="noopener">Learn more &rarr;</a>
-          </div>
-        </div>
+        </details>
       </section>
 
       <!---------- ChatGPT section ---------->
@@ -940,11 +958,14 @@ const PAGE_HTML = `<!DOCTYPE html>
 
         <div class="grid2" id="chatgpt-limits"></div>
 
-        <div class="panel footer-panel" data-tag="account">
-          <div class="spend-row"><span>Plan</span><span class="tag" id="chatgpt-plan">--</span></div>
-          <div class="spend-row" style="margin-top:10px"><span>Credit balance</span><span id="chatgpt-credits">--</span></div>
-          <div class="note">ChatGPT-plan usage reported for Codex and Work. Regular ChatGPT chat, images, voice, and uploads have separate limits.</div>
-        </div>
+        <details class="provider-details">
+          <summary>account details</summary>
+          <div class="panel" data-tag="account">
+            <div class="spend-row"><span>Plan</span><span class="tag" id="chatgpt-plan">--</span></div>
+            <div class="spend-row" style="margin-top:10px"><span>Credit balance</span><span id="chatgpt-credits">--</span></div>
+            <div class="note">ChatGPT-plan usage reported for Codex and Work. Regular ChatGPT chat, images, voice, and uploads have separate limits.</div>
+          </div>
+        </details>
       </section>
 
       <!---------- OpenCode section ---------->
@@ -990,6 +1011,8 @@ const PAGE_HTML = `<!DOCTYPE html>
           </div>
         </div>
       </section>
+
+      </div>
 
       <div class="legend">
         <div><span class="dot" style="background:var(--green)"></span>0-59% normal</div>

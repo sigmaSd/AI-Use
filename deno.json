@@ -1,6 +1,11 @@
 {
+  "name": "aiuse",
+  "version": "0.2.0",
+  "license": "MIT",
+  "exports": "./report.ts",
   "tasks": {
-    "compile": "deno desktop --allow-net --allow-env report.ts"
+    "compile": "deno desktop --allow-net --allow-env --output ./dist/aiuse report.ts",
+    "package:rpm": "deno desktop --allow-net --allow-env --output ./dist/aiuse.rpm report.ts"
   },
   "desktop": {
     "app": {
@@ -12,7 +17,7 @@
     },
     "backend": "webview",
     "output": {
-      "linux": "./dist/aiuse"
+      "linux": "./dist/aiuse.rpm"
     }
   }
 }

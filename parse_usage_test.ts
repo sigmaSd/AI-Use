@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import { parseOpenCodeUsage } from "./parse_usage.ts";
 
 // ---------- helper: build a minimal HTML wrapper ----------
@@ -164,7 +164,8 @@ Deno.test("full HTML does not confuse with rendered percent spans", () => {
 });
 
 Deno.test("multiline HTML does not break matching", () => {
-  const data = `rollingUsage:$R[37]={status:"ok",\nresetInSec:14945,\nusagePercent:15}`;
+  const data =
+    `rollingUsage:$R[37]={status:"ok",\nresetInSec:14945,\nusagePercent:15}`;
   const obj = `$R[35]={mine:!0,\n${data}}`;
 
   const r = parseOpenCodeUsage(wrap(obj));

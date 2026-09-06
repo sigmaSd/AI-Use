@@ -288,7 +288,7 @@ function extractPageTitle(html: string): string {
   return m ? m[1].trim() : "(no title)";
 }
 
-async function resolveOpenCodeWorkspace(auth: string): Promise<string> {
+function resolveOpenCodeWorkspace(_auth: string): string {
   if (OPENCODE_WORKSPACE_OVERRIDE) return OPENCODE_WORKSPACE_OVERRIDE;
   const cached = getOpenCodeWorkspace();
   if (cached) return cached;
@@ -543,7 +543,7 @@ async function handle(req: Request): Promise<Response> {
     let chatgptSession0 = body.chatgptSession0?.trim();
     let chatgptSession1 = body.chatgptSession1?.trim();
     let opencodeTok = body.opencodeToken?.trim();
-    let opencodeWsId = body.opencodeWorkspaceId?.trim();
+    const opencodeWsId = body.opencodeWorkspaceId?.trim();
 
     // Strip accidental cookie-name prefixes
     if (claudeTok && claudeTok.startsWith("sessionKey=")) {

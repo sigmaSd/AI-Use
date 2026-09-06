@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { ChatGPTAuthError, ChatGPTClient } from "./chatgpt.ts";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -29,13 +29,13 @@ Deno.test("reuses a valid access token across usage polls", async () => {
   const client = new ChatGPTClient({
     deviceId: "device-test",
     now: () => now,
-    fetchFn: async (input) => {
+    fetchFn: (input) => {
       if (urlOf(input).includes("/api/auth/session")) {
         sessionRequests++;
-        return jsonResponse(200, { accessToken });
+        return Promise.resolve(jsonResponse(200, { accessToken }));
       }
       usageRequests++;
-      return jsonResponse(200, { plan_type: "plus" });
+      return Promise.resolve(jsonResponse(200, { plan_type: "plus" }));
     },
   });
 
@@ -53,15 +53,15 @@ Deno.test("refreshes the access token after expiry", async () => {
   const client = new ChatGPTClient({
     deviceId: "device-test",
     now: () => now,
-    fetchFn: async (input) => {
+    fetchFn: (input) => {
       if (urlOf(input).includes("/api/auth/session")) {
         sessionRequests++;
-        return jsonResponse(
+        return Promise.resolve(jsonResponse(
           200,
           { accessToken: fakeJwt((now + 60_000) / 1000) },
-        );
+        ));
       }
-      return jsonResponse(200, { plan_type: "plus" });
+      return Promise.resolve(jsonResponse(200, { plan_type: "plus" }));
     },
   });
 
@@ -80,18 +80,20 @@ Deno.test("refreshes once when the usage token is rejected", async () => {
   const client = new ChatGPTClient({
     deviceId: "device-test",
     now: () => now,
-    fetchFn: async (input) => {
+    fetchFn: (input) => {
       if (urlOf(input).includes("/api/auth/session")) {
         sessionRequests++;
-        return jsonResponse(
+        return Promise.resolve(jsonResponse(
           200,
           { accessToken: fakeJwt((now + 60 * 60_000) / 1000) },
-        );
+        ));
       }
       usageRequests++;
-      return usageRequests === 1
-        ? jsonResponse(403, { detail: "expired" })
-        : jsonResponse(200, { plan_type: "plus" });
+      return Promise.resolve(
+        usageRequests === 1
+          ? jsonResponse(403, { detail: "expired" })
+          : jsonResponse(200, { plan_type: "plus" }),
+      );
     },
   });
 
@@ -110,16 +112,16 @@ Deno.test("surfaces an auth error after the refresh retry also fails", async () 
   const client = new ChatGPTClient({
     deviceId: "device-test",
     now: () => now,
-    fetchFn: async (input) => {
+    fetchFn: (input) => {
       if (urlOf(input).includes("/api/auth/session")) {
         sessionRequests++;
-        return jsonResponse(
+        return Promise.resolve(jsonResponse(
           200,
           { accessToken: fakeJwt((now + 60 * 60_000) / 1000) },
-        );
+        ));
       }
       usageRequests++;
-      return jsonResponse(403, { detail: "forbidden" });
+      return Promise.resolve(jsonResponse(403, { detail: "forbidden" }));
     },
   });
 

@@ -18,8 +18,10 @@
 const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID");
 const OPENCODE_WORKSPACE_OVERRIDE = Deno.env.get("OPENCODE_WORKSPACE_ID");
 const POLL_INTERVAL_MS = 30_000;
-const AUTH_RETRY_INTERVAL_MS = 5_000;
-const AUTH_RETRY_MAX = 6;
+const AUTH_RETRY_BASE_MS = 30_000;
+const AUTH_RETRY_MAX_MS = 10 * 60_000;
+const AUTH_RETRY_JITTER_MS = 5_000;
+const AUTH_ERROR_DISPLAY_THRESHOLD = 2;
 
 const CLAUDE_TOKEN_KEY = "claude_session_key";
 const CLAUDE_ORG_KEY = "claude_org_id";
@@ -31,7 +33,13 @@ const OPENCODE_WORKSPACE_KEY = "opencode_workspace_id";
 const DEVICE_ID = crypto.randomUUID();
 const ANONYMOUS_ID = crypto.randomUUID();
 const ACTIVITY_SESSION_ID = crypto.randomUUID();
+const chatgptClient = new ChatGPTClient({ deviceId: DEVICE_ID });
 
+import {
+  ChatGPTAuthError,
+  ChatGPTClient,
+  type ChatGPTUsageResponse,
+} from "./chatgpt.ts";
 import { type OCUsageResponse, parseOpenCodeUsage } from "./parse_usage.ts";
 
 class AuthError extends Error {}
@@ -87,34 +95,6 @@ interface PrepaidCredits {
 }
 
 // ---- types (ChatGPT plan / Codex usage) ----
-interface ChatGPTUsageWindow {
-  used_percent: number;
-  limit_window_seconds: number;
-  reset_after_seconds?: number;
-  reset_at?: number;
-}
-interface ChatGPTRateLimit {
-  allowed?: boolean;
-  limit_reached?: boolean;
-  primary_window?: ChatGPTUsageWindow | null;
-  secondary_window?: ChatGPTUsageWindow | null;
-}
-interface ChatGPTUsageResponse {
-  plan_type?: string;
-  rate_limit?: ChatGPTRateLimit | null;
-  code_review_rate_limit?: ChatGPTRateLimit | null;
-  additional_rate_limits?: Array<{
-    limit_name: string;
-    rate_limit: ChatGPTRateLimit;
-  }>;
-  credits?: {
-    has_credits?: boolean;
-    balance?: string | number | null;
-    unlimited?: boolean;
-    overage_limit_reached?: boolean;
-  } | null;
-}
-
 // ---- types (OpenCode) ----
 interface ProviderError {
   kind: "auth" | "network";
@@ -150,12 +130,12 @@ function getChatGPTSession1(): string | null {
 function setChatGPTSession(session0: string, session1: string) {
   localStorage.setItem(CHATGPT_SESSION_0_KEY, session0);
   localStorage.setItem(CHATGPT_SESSION_1_KEY, session1);
-  localStorage.removeItem("chatgpt_access_token");
+  chatgptClient.clearAccessToken();
 }
 function clearChatGPTSession() {
   localStorage.removeItem(CHATGPT_SESSION_0_KEY);
   localStorage.removeItem(CHATGPT_SESSION_1_KEY);
-  localStorage.removeItem("chatgpt_access_token");
+  chatgptClient.clearAccessToken();
 }
 function hasChatGPTSession(): boolean {
   return !!getChatGPTSession0() && !!getChatGPTSession1();
@@ -193,8 +173,23 @@ let opencodeError: ProviderError | null = null;
 let authErrorCountClaude = 0;
 let authErrorCountChatGPT = 0;
 let authErrorCountOpenCode = 0;
+let nextClaudePollAt = 0;
+let nextChatGPTPollAt = 0;
+let nextOpenCodePollAt = 0;
 let lastFetchedAt: string | null = null;
+let usageRevision = 0;
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
+let pollInFlight = false;
+
+function authRetryDelay(errorCount: number): number {
+  const exponent = Math.min(Math.max(errorCount - 1, 0), 20);
+  const exponential = Math.min(
+    AUTH_RETRY_MAX_MS,
+    AUTH_RETRY_BASE_MS * 2 ** exponent,
+  );
+  const jitter = Math.floor(Math.random() * AUTH_RETRY_JITTER_MS);
+  return exponential + jitter;
+}
 
 // ---- Claude API ----
 function claudeHeaders(token: string): Record<string, string> {
@@ -264,61 +259,6 @@ async function fetchClaudePrepaidCredits(
     `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
     { headers: claudeHeaders(token) },
   );
-  if (res.status === 401 || res.status === 403) {
-    throw new AuthError(`auth failed: ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new Error(`request failed: ${res.status} ${res.statusText}`);
-  }
-  return await res.json();
-}
-
-// ---- ChatGPT API ----
-async function resolveChatGPTAccessToken(
-  session0: string,
-  session1: string,
-): Promise<string> {
-  const cookie = `__Secure-next-auth.session-token.0=${session0}; ` +
-    `__Secure-next-auth.session-token.1=${session1}`;
-  const res = await fetch("https://chatgpt.com/api/auth/session", {
-    headers: {
-      "Accept": "application/json",
-      "Cookie": cookie,
-      "User-Agent":
-        "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
-    },
-  });
-  if (res.status === 401 || res.status === 403) {
-    throw new AuthError(`session refresh failed: ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new Error(
-      `session refresh failed: ${res.status} ${res.statusText}`,
-    );
-  }
-  const body = await res.json() as { accessToken?: string };
-  if (!body.accessToken) {
-    throw new AuthError("session refresh returned no access token");
-  }
-  return body.accessToken;
-}
-
-async function fetchChatGPTUsage(
-  session0: string,
-  session1: string,
-): Promise<ChatGPTUsageResponse> {
-  const token = await resolveChatGPTAccessToken(session0, session1);
-  const res = await fetch("https://chatgpt.com/backend-api/wham/usage", {
-    headers: {
-      "Accept": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "oai-device-id": DEVICE_ID,
-      "X-OpenAI-Target-Path": "/backend-api/wham/usage",
-      "X-OpenAI-Target-Route": "/backend-api/wham/usage",
-      "User-Agent":
-        "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
-    },
-  });
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed: ${res.status}`);
   }
@@ -400,99 +340,155 @@ async function fetchOpenCodeUsage(
 
 // ---- polling ----
 function scheduleNext() {
-  const hasAuthErrors =
-    (authErrorCountClaude > 0 && authErrorCountClaude <= AUTH_RETRY_MAX) ||
-    (authErrorCountChatGPT > 0 &&
-      authErrorCountChatGPT <= AUTH_RETRY_MAX) ||
-    (authErrorCountOpenCode > 0 &&
-      authErrorCountOpenCode <= AUTH_RETRY_MAX);
-  const delay = hasAuthErrors ? AUTH_RETRY_INTERVAL_MS : POLL_INTERVAL_MS;
-  pollTimer = setTimeout(pollOnce, delay);
-}
+  const now = Date.now();
+  const nextPolls: number[] = [];
 
-async function pollOnce() {
-  const claudeToken = getClaudeToken();
-  const chatgptSession0 = getChatGPTSession0();
-  const chatgptSession1 = getChatGPTSession1();
-  const opencodeToken = getOpenCodeToken();
+  if (getClaudeToken()) nextPolls.push(nextClaudePollAt || now);
+  if (hasChatGPTSession()) nextPolls.push(nextChatGPTPollAt || now);
+  if (getOpenCodeToken()) nextPolls.push(nextOpenCodePollAt || now);
 
-  if (!claudeToken && !hasChatGPTSession() && !opencodeToken) {
-    scheduleNext();
+  if (nextPolls.length === 0) {
+    pollTimer = undefined;
     return;
   }
 
-  let hadAnySuccess = false;
+  const nextPollAt = Math.min(...nextPolls);
+  const delay = Math.max(0, nextPollAt - now);
+  pollTimer = setTimeout(() => {
+    pollTimer = undefined;
+    void pollOnce();
+  }, delay);
+}
 
-  if (chatgptSession0 && chatgptSession1) {
-    try {
-      latestChatGPTUsage = await fetchChatGPTUsage(
-        chatgptSession0,
-        chatgptSession1,
-      );
-      authErrorCountChatGPT = 0;
-      chatgptError = null;
-      hadAnySuccess = true;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (e instanceof AuthError) {
-        authErrorCountChatGPT++;
-        chatgptError = { kind: "auth", message };
-      } else {
-        chatgptError = { kind: "network", message };
-      }
-      console.error("[aiuse] chatgpt poll failed:", message);
+async function pollOnce() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+
+  try {
+    const claudeToken = getClaudeToken();
+    const chatgptSession0 = getChatGPTSession0();
+    const chatgptSession1 = getChatGPTSession1();
+    const opencodeToken = getOpenCodeToken();
+    const now = Date.now();
+
+    if (!claudeToken && !hasChatGPTSession() && !opencodeToken) {
+      return;
     }
-  }
 
-  if (claudeToken) {
-    try {
-      latestClaudeUsage = await fetchClaudeUsage(claudeToken);
-      latestClaudePrepaid = await fetchClaudePrepaidCredits(claudeToken);
-      authErrorCountClaude = 0;
-      claudeError = null;
-      hadAnySuccess = true;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (e instanceof AuthError) {
-        authErrorCountClaude++;
-        claudeError = { kind: "auth", message };
-      } else {
-        claudeError = { kind: "network", message };
+    let hadAnySuccess = false;
+    let attemptedAnyProvider = false;
+
+    if (
+      chatgptSession0 && chatgptSession1 &&
+      now >= nextChatGPTPollAt
+    ) {
+      attemptedAnyProvider = true;
+      try {
+        latestChatGPTUsage = await chatgptClient.fetchUsage(
+          chatgptSession0,
+          chatgptSession1,
+        );
+        authErrorCountChatGPT = 0;
+        chatgptError = null;
+        nextChatGPTPollAt = Date.now() + POLL_INTERVAL_MS;
+        hadAnySuccess = true;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (e instanceof ChatGPTAuthError) {
+          authErrorCountChatGPT++;
+          if (authErrorCountChatGPT >= AUTH_ERROR_DISPLAY_THRESHOLD) {
+            chatgptError = {
+              kind: "auth",
+              message:
+                `${message}; ChatGPT cookies may have rotated — reconnect ChatGPT if this continues`,
+            };
+          }
+          nextChatGPTPollAt = Date.now() +
+            authRetryDelay(authErrorCountChatGPT);
+        } else {
+          authErrorCountChatGPT = 0;
+          chatgptError = { kind: "network", message };
+          nextChatGPTPollAt = Date.now() + POLL_INTERVAL_MS;
+        }
+        console.error("[aiuse] chatgpt poll failed:", message);
       }
-      console.error("[aiuse] claude poll failed:", message);
     }
-  }
 
-  if (opencodeToken) {
-    try {
-      latestOpenCodeUsage = await fetchOpenCodeUsage(opencodeToken);
-      authErrorCountOpenCode = 0;
-      opencodeError = null;
-      hadAnySuccess = true;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (e instanceof AuthError) {
-        authErrorCountOpenCode++;
-        opencodeError = { kind: "auth", message };
-      } else {
-        opencodeError = { kind: "network", message };
+    if (claudeToken && now >= nextClaudePollAt) {
+      attemptedAnyProvider = true;
+      try {
+        latestClaudeUsage = await fetchClaudeUsage(claudeToken);
+        latestClaudePrepaid = await fetchClaudePrepaidCredits(claudeToken);
+        authErrorCountClaude = 0;
+        claudeError = null;
+        nextClaudePollAt = Date.now() + POLL_INTERVAL_MS;
+        hadAnySuccess = true;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (e instanceof AuthError) {
+          authErrorCountClaude++;
+          if (authErrorCountClaude >= AUTH_ERROR_DISPLAY_THRESHOLD) {
+            claudeError = { kind: "auth", message };
+          }
+          nextClaudePollAt = Date.now() + authRetryDelay(authErrorCountClaude);
+        } else {
+          authErrorCountClaude = 0;
+          claudeError = { kind: "network", message };
+          nextClaudePollAt = Date.now() + POLL_INTERVAL_MS;
+        }
+        console.error("[aiuse] claude poll failed:", message);
       }
-      console.error(
-        "[aiuse] opencode poll failed:",
-        e instanceof Error ? e.stack || message : message,
-      );
     }
-  }
 
-  if (hadAnySuccess) {
-    lastFetchedAt = new Date().toISOString();
+    if (opencodeToken && now >= nextOpenCodePollAt) {
+      attemptedAnyProvider = true;
+      try {
+        latestOpenCodeUsage = await fetchOpenCodeUsage(opencodeToken);
+        authErrorCountOpenCode = 0;
+        opencodeError = null;
+        nextOpenCodePollAt = Date.now() + POLL_INTERVAL_MS;
+        hadAnySuccess = true;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (e instanceof AuthError) {
+          authErrorCountOpenCode++;
+          if (authErrorCountOpenCode >= AUTH_ERROR_DISPLAY_THRESHOLD) {
+            opencodeError = { kind: "auth", message };
+          }
+          nextOpenCodePollAt = Date.now() +
+            authRetryDelay(authErrorCountOpenCode);
+        } else {
+          authErrorCountOpenCode = 0;
+          opencodeError = { kind: "network", message };
+          nextOpenCodePollAt = Date.now() + POLL_INTERVAL_MS;
+        }
+        console.error(
+          "[aiuse] opencode poll failed:",
+          e instanceof Error ? e.stack || message : message,
+        );
+      }
+    }
+
+    if (hadAnySuccess) {
+      lastFetchedAt = new Date().toISOString();
+    }
+    if (attemptedAnyProvider) usageRevision++;
+  } finally {
+    pollInFlight = false;
+    scheduleNext();
   }
-  scheduleNext();
 }
 
 function startPolling() {
   if (pollTimer !== undefined) return;
-  pollOnce();
+  void pollOnce();
+}
+function wakePolling() {
+  if (pollTimer !== undefined) {
+    clearTimeout(pollTimer);
+    pollTimer = undefined;
+  }
+  if (!pollInFlight) void pollOnce();
 }
 function stopPolling() {
   if (pollTimer !== undefined) {
@@ -592,6 +588,8 @@ async function handle(req: Request): Promise<Response> {
     if (chatgptSession0 && chatgptSession1) {
       setChatGPTSession(chatgptSession0, chatgptSession1);
       chatgptError = null;
+      authErrorCountChatGPT = 0;
+      nextChatGPTPollAt = 0;
     }
     if (opencodeTok) {
       setOpenCodeToken(opencodeTok);
@@ -599,7 +597,8 @@ async function handle(req: Request): Promise<Response> {
       opencodeError = null;
     }
 
-    startPolling();
+    usageRevision++;
+    wakePolling();
     return json({ ok: true });
   }
 
@@ -619,6 +618,7 @@ async function handle(req: Request): Promise<Response> {
         error: opencodeError,
       },
       lastFetchedAt,
+      revision: usageRevision,
     });
   }
 
@@ -635,12 +635,14 @@ async function handle(req: Request): Promise<Response> {
       latestClaudePrepaid = null;
       claudeError = null;
       authErrorCountClaude = 0;
+      nextClaudePollAt = 0;
     }
     if (provider === "chatgpt" || provider === "all") {
       clearChatGPTSession();
       latestChatGPTUsage = null;
       chatgptError = null;
       authErrorCountChatGPT = 0;
+      nextChatGPTPollAt = 0;
     }
     if (provider === "opencode" || provider === "all") {
       clearOpenCodeToken();
@@ -648,7 +650,10 @@ async function handle(req: Request): Promise<Response> {
       latestOpenCodeUsage = null;
       opencodeError = null;
       authErrorCountOpenCode = 0;
+      nextOpenCodePollAt = 0;
     }
+
+    usageRevision++;
 
     if (!getClaudeToken() && !hasChatGPTSession() && !getOpenCodeToken()) {
       stopPolling();
@@ -1103,6 +1108,9 @@ const PAGE_HTML = `<!DOCTYPE html>
   var resets = {}; // absolute reset times by provider/window
   var chatgptResetKeys = [];
   var lastFetchedAt = null;
+  var usageRequestSequence = 0;
+  var latestAppliedUsageRequest = 0;
+  var latestAppliedUsageRevision = -1;
   var pollHandle = null;
 
   // ---- provider visibility ----
@@ -1418,8 +1426,14 @@ const PAGE_HTML = `<!DOCTYPE html>
 
   // ---- data fetching ----
   function fetchUsageOnce(){
+    var requestSequence = ++usageRequestSequence;
     fetch('/api/usage').then(function(r){
       return r.json().then(function(body){
+        var revision = typeof body.revision === 'number' ? body.revision : 0;
+        if(requestSequence < latestAppliedUsageRequest) return;
+        if(revision < latestAppliedUsageRevision) return;
+        latestAppliedUsageRequest = requestSequence;
+        latestAppliedUsageRevision = revision;
         if(body.claude) renderClaudeUsage(body.claude.usage, body.claude.prepaidCredits, body.claude.error);
         if(body.chatgpt) renderChatGPTUsage(body.chatgpt.usage, body.chatgpt.error);
         if(body.opencode) renderOpenCodeUsage(body.opencode.usage, body.opencode.error);

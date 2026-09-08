@@ -1,0 +1,102 @@
+name: Build & publish
+
+# Every push to main rebuilds the desktop app for every target `deno desktop`
+# supports plus the Android APK, and republishes them all under a single
+# rolling "latest" GitHub Release. Not a versioned release process — just
+# "here's what main currently builds", updated on every commit.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: linux-arm64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - name: windows-x64
+            os: ubuntu-latest
+            target: x86_64-pc-windows-msvc
+          - name: windows-arm64
+            os: ubuntu-latest
+            target: aarch64-pc-windows-msvc
+          # macOS packaging needs actual macOS-native tooling that isn't
+          # present when cross-compiling from Linux (confirmed: the webview
+          # backend downloads and extracts fine either way, but bundling the
+          # .app fails on a Linux host with an opaque "No such file or
+          # directory" partway through). Building on the real thing sidesteps
+          # that rather than chasing it blind.
+          - name: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - run: deno task bundle
+      - run: >
+          deno desktop --target=${{ matrix.target }}
+          --allow-net --allow-env --allow-read --allow-sys
+          --exclude-unused-npm
+          --include ./web/index.html --include ./web/dist --include ./host/runtime.js
+          --output ./dist/aiuse
+          report.ts
+      - name: Archive
+        run: |
+          cd dist
+          zip -qr ../aiuse-${{ matrix.name }}.zip aiuse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aiuse-${{ matrix.name }}
+          path: aiuse-${{ matrix.name }}.zip
+          retention-days: 7
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: deno run -A jsr:@sigmasd/denoapk build .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aiuse-android
+          path: dist/aiuse.apk
+          retention-days: 7
+
+  publish:
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest $(find artifacts -type f) \
+            --title "Latest build ($(git rev-parse --short HEAD))" \
+            --notes "Automatically built from the latest commit on main — not a stable release." \
+            --prerelease

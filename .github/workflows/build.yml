@@ -32,12 +32,11 @@ jobs:
           - name: windows-arm64
             os: ubuntu-latest
             target: aarch64-pc-windows-msvc
-          # macOS packaging needs actual macOS-native tooling that isn't
-          # present when cross-compiling from Linux (confirmed: the webview
-          # backend downloads and extracts fine either way, but bundling the
-          # .app fails on a Linux host with an opaque "No such file or
-          # directory" partway through). Building on the real thing sidesteps
-          # that rather than chasing it blind.
+          # macOS packaging needs actual macOS-native tooling: cross-compiling
+          # the .app from Linux fails partway through bundling with an opaque
+          # "No such file or directory", even though the webview backend
+          # itself downloads and extracts fine either way. Confirmed fixed by
+          # building on the real OS instead.
           - name: macos-x64
             os: macos-latest
             target: x86_64-apple-darwin
@@ -59,7 +58,9 @@ jobs:
       - name: Archive
         run: |
           cd dist
-          zip -qr ../aiuse-${{ matrix.name }}.zip aiuse
+          # A no-extension --output is a bare "aiuse" dir on linux/windows,
+          # but deno desktop appends .app on macOS -- glob catches both.
+          zip -qr ../aiuse-${{ matrix.name }}.zip aiuse*
       - uses: actions/upload-artifact@v4
         with:
           name: aiuse-${{ matrix.name }}
@@ -75,7 +76,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - run: deno run -A jsr:@sigmasd/denoapk build .
+      # --min-dep-age 0: this is our own package, published by this same
+      # org's CI moments before this job can run -- the supply-chain risk
+      # the default 24h policy guards against doesn't apply to ourselves.
+      - run: deno run -A --min-dep-age 0 jsr:@sigmasd/denoapk build .
       - uses: actions/upload-artifact@v4
         with:
           name: aiuse-android

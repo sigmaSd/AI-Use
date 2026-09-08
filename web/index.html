@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Usage</title>
+    <style>
+    :root {
+      --bg: #0a0e0c;
+      --panel: #101512;
+      --grid: #1b241f;
+      --text: #c8d6cd;
+      --dim: #5c6b62;
+      --green: #4fd68a;
+      --green-dim: #2b6b4d;
+      --amber: #e0a94f;
+      --red: #e0685a;
+      --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+    }
+    body {
+      background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    /* ---------- key screen ---------- */
+    #key-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .key-card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 2px;
+      padding: 28px 26px 24px;
+      position: relative;
+    }
+    .key-card::before {
+      content: "authentication";
+      position: absolute;
+      top: -9px;
+      left: 16px;
+      background: var(--bg);
+      padding: 0 8px;
+      font-size: 10px;
+      letter-spacing: .14em;
+      color: var(--dim);
+    }
+    .key-card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .key-card > p {
+      margin: 0 0 18px;
+      font-size: 12.5px;
+      color: var(--dim);
+      line-height: 1.6;
+    }
+    .key-card code {
+      color: var(--green);
+      background: #0d1210;
+      padding: 1px 5px;
+      border-radius: 2px;
+    }
+
+    .provider-field {
+      margin-bottom: 14px;
+    }
+    .provider-field-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 4px;
+    }
+    .provider-field label {
+      font-size: 12px;
+      color: var(--dim);
+    }
+    .provider-field label code {
+      color: var(--green);
+      background: #0d1210;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-size: 11px;
+    }
+    .connected-badge {
+      font-size: 10px;
+      color: var(--green);
+      border: 1px solid var(--green-dim);
+      padding: 1px 6px;
+      border-radius: 2px;
+      display: none;
+    }
+    .provider-field input {
+      width: 100%;
+      background: #0d1210;
+      border: 1px solid var(--grid);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12.5px;
+      padding: 9px 11px;
+      border-radius: 2px;
+      outline: none;
+    }
+    .provider-field input:focus {
+      border-color: var(--green-dim);
+    }
+    .provider-hint {
+      font-size: 10.5px;
+      color: var(--dim);
+      margin-top: 3px;
+      padding-left: 2px;
+      line-height: 1.4;
+    }
+    .provider-hint b {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .provider-connect {
+      width: 100%;
+      margin-top: 8px;
+      background: #0d1210;
+      color: var(--text);
+      border: 1px solid var(--grid);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 2px;
+      cursor: pointer;
+      letter-spacing: .03em;
+    }
+    .provider-connect:hover {
+      background: var(--green-dim);
+      border-color: var(--green);
+      color: #eafff2;
+    }
+    .provider-connect:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+    .provider-error-msg {
+      min-height: 16px;
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--red);
+    }
+    .back-to-dash {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      font-size: 11px;
+      color: var(--dim);
+      cursor: pointer;
+      text-decoration: none;
+      border-top: 1px dashed var(--grid);
+      padding-top: 10px;
+    }
+    .back-to-dash:hover {
+      color: var(--text);
+    }
+
+    /* ---------- dashboard ---------- */
+    #dashboard {
+      padding: 22px 24px 28px;
+    }
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--grid);
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .brand {
+      font-size: 13px;
+      letter-spacing: .18em;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+    .brand b {
+      color: var(--green);
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--dim);
+    }
+    .clock span {
+      color: var(--text);
+    }
+    .reset-link {
+      color: var(--dim);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--dim);
+      cursor: pointer;
+    }
+    .reset-link:hover {
+      color: var(--text);
+      border-color: var(--text);
+    }
+    h1 {
+      font-size: 19px;
+      margin: 0 0 3px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .sub {
+      color: var(--dim);
+      font-size: 11.5px;
+      margin-bottom: 18px;
+    }
+
+    .providers-grid {
+      display: grid;
+      grid-template-columns: repeat(3,minmax(0,1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .grid2,
+    .grid3 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    @media (max-width:980px) {
+      .providers-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width:660px) {
+      #dashboard {
+        padding: 16px 12px 24px;
+      }
+      .providers-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 3px;
+      padding: 13px 14px 12px;
+      position: relative;
+    }
+    .panel::before {
+      content: attr(data-tag);
+      position: absolute;
+      top: -7px;
+      left: 11px;
+      background: var(--bg);
+      padding: 0 6px;
+      font-size: 8px;
+      letter-spacing: .13em;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+    .row-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+    .row-head .label {
+      font-size: 11.5px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status {
+      font-size: 8px;
+      letter-spacing: .08em;
+      padding: 2px 5px;
+      border-radius: 2px;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .pct {
+      font-size: 27px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+    .pct small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--dim);
+    }
+    .meter {
+      display: flex;
+      gap: 2px;
+      margin: 8px 0 7px;
+    }
+    .cell {
+      flex: 1;
+      height: 8px;
+      background: #141a17;
+      border-radius: 1px;
+    }
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9.5px;
+      color: var(--dim);
+      border-top: 1px dashed var(--grid);
+      padding-top: 6px;
+      margin-top: 4px;
+    }
+    .meta b {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .countdown {
+      font-size: 10px;
+      color: var(--dim);
+      margin-top: 1px;
+    }
+    .countdown span {
+      color: var(--amber);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- provider sections ---------- */
+    .provider-section {
+      margin: 0;
+      min-width: 0;
+    }
+    .provider-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--grid);
+    }
+    .provider-head h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .provider-badge {
+      font-size: 8px;
+      letter-spacing: .08em;
+      padding: 2px 6px;
+      border-radius: 2px;
+      border: 1px solid var(--grid);
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+    .provider-badge.ok {
+      border-color: var(--green-dim);
+      color: var(--green);
+    }
+    .provider-badge.err {
+      border-color: var(--red);
+      color: var(--red);
+    }
+    .provider-error {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #1a1210;
+      border: 1px solid var(--red);
+      color: #f2b8ae;
+      font-size: 10px;
+      padding: 7px 9px;
+      border-radius: 2px;
+      margin-bottom: 10px;
+    }
+    .provider-error b {
+      color: var(--red);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: .08em;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .provider-error button {
+      flex-shrink: 0;
+      background: transparent;
+      border: 1px solid var(--red);
+      color: #f2b8ae;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .provider-error button:hover {
+      background: var(--red);
+      color: #2a0d08;
+    }
+
+    .no-provider {
+      padding: 24px;
+      text-align: center;
+      color: var(--dim);
+      font-size: 13px;
+      border: 1px dashed var(--grid);
+      border-radius: 2px;
+      background: var(--panel);
+    }
+    .no-provider a {
+      color: var(--green);
+      cursor: pointer;
+      border-bottom: 1px dotted var(--green-dim);
+    }
+
+    /* ---------- claude-specific ---------- */
+    #scoped-panel {
+      margin-top: 10px;
+    }
+    .scoped-row + .scoped-row {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px dashed var(--grid);
+    }
+    .scoped-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .scoped-name {
+      font-size: 13px;
+      color: var(--text);
+    }
+    .scoped-pct {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .footer-panel {
+      margin-top: 10px;
+    }
+    .spend-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+    }
+    .spend-row .tag {
+      font-size: 10px;
+      letter-spacing: .1em;
+      color: var(--dim);
+      border: 1px solid var(--grid);
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+    .note {
+      margin-top: 9px;
+      font-size: 9.5px;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+    .note a {
+      color: var(--green);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--green-dim);
+    }
+    .provider-details {
+      margin-top: 9px;
+    }
+    .provider-details summary {
+      color: var(--dim);
+      font-size: 9.5px;
+      cursor: pointer;
+      list-style: none;
+      padding: 5px 1px;
+      border-top: 1px dashed var(--grid);
+    }
+    .provider-details summary::before {
+      content: '+ ';
+      color: var(--green);
+    }
+    .provider-details[open] summary::before {
+      content: '− ';
+    }
+    .actions-menu {
+      position: relative;
+    }
+    .actions-menu summary {
+      cursor: pointer;
+      list-style: none;
+      color: var(--text);
+      border: 1px solid var(--grid);
+      padding: 4px 7px;
+      border-radius: 2px;
+    }
+    .actions-menu summary:hover {
+      border-color: var(--green-dim);
+    }
+    .actions-popover {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 5px);
+      z-index: 10;
+      min-width: 145px;
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      padding: 5px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 8px 24px #0008;
+    }
+    .legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 16px;
+      font-size: 9.5px;
+      color: var(--dim);
+      flex-wrap: wrap;
+    }
+    .legend .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .stamp {
+      margin-top: 10px;
+      font-size: 9px;
+      color: var(--dim);
+      opacity: .7;
+      text-align: right;
+    }
+
+    /* ---------- QR share / scan ---------- */
+    /* fast-path entry on the key screen */
+    .scan-button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(79, 214, 138, .06);
+      color: var(--text);
+      border: 1px solid var(--green-dim);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 11px 12px;
+      border-radius: 2px;
+      cursor: pointer;
+      letter-spacing: .02em;
+    }
+    .scan-button:hover {
+      background: var(--green-dim);
+      border-color: var(--green);
+      color: #eafff2;
+    }
+    .scan-button-icon {
+      font-size: 15px;
+      line-height: 1;
+    }
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+      font-size: 10px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+    .or-divider::before,
+    .or-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--grid);
+    }
+
+    .qr-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 8, 7, .85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 20;
+    }
+    .qr-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 2px;
+      padding: 24px 22px;
+      position: relative;
+      text-align: center;
+    }
+    .qr-card::before {
+      position: absolute;
+      top: -9px;
+      left: 16px;
+      background: var(--bg);
+      padding: 0 8px;
+      font-size: 10px;
+      letter-spacing: .14em;
+      color: var(--dim);
+    }
+    #share-modal .qr-card::before {
+      content: "device pairing";
+    }
+    #scan-modal .qr-card::before {
+      content: "scan to import";
+    }
+    .qr-warning {
+      color: var(--amber);
+      font-size: 11px;
+      line-height: 1.5;
+      border: 1px solid var(--green-dim);
+      background: rgba(224, 169, 79, .08);
+      padding: 10px 12px;
+      border-radius: 2px;
+      text-align: left;
+      margin-bottom: 16px;
+    }
+    #share-canvas {
+      width: 100%;
+      /* As large as the card comfortably allows — a denser payload (the
+         data frames) packs more modules into the same box, so keeping this
+         small shrinks each module below what a phone camera can resolve. */
+      max-width: 360px;
+      image-rendering: pixelated;
+      background: #fff;
+      border-radius: 2px;
+    }
+
+    /* scan viewport: video + aligned viewfinder guide + pulse-on-detect */
+    .scan-viewport {
+      position: relative;
+      border-radius: 2px;
+      overflow: hidden;
+      background: #000;
+    }
+    #scan-video {
+      display: block;
+      width: 100%;
+      max-height: 50vh;
+      object-fit: cover;
+    }
+    .scan-frame {
+      position: absolute;
+      inset: 12%;
+      border: 2px solid rgba(79, 214, 138, .55);
+      border-radius: 4px;
+      pointer-events: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .scan-frame::before,
+    .scan-frame::after,
+    .scan-frame > .tl,
+    .scan-frame > .tr,
+    .scan-frame > .bl,
+    .scan-frame > .br {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border: 3px solid var(--green);
+    }
+    .scan-frame > .tl {
+      top: -3px;
+      left: -3px;
+      border-right: none;
+      border-bottom: none;
+    }
+    .scan-frame > .tr {
+      top: -3px;
+      right: -3px;
+      border-left: none;
+      border-bottom: none;
+    }
+    .scan-frame > .bl {
+      bottom: -3px;
+      left: -3px;
+      border-right: none;
+      border-top: none;
+    }
+    .scan-frame > .br {
+      bottom: -3px;
+      right: -3px;
+      border-left: none;
+      border-top: none;
+    }
+    /* Toggled on briefly by JS every time a frame is successfully decoded —
+       the "yes, the camera just read something" feedback that was missing. */
+    .scan-viewport.detected .scan-frame {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(79, 214, 138, .35) inset;
+    }
+
+    .qr-status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--dim);
+      min-height: 16px;
+    }
+    .qr-status.err {
+      color: var(--red);
+    }
+    .qr-status.ok {
+      color: var(--green);
+    }
+    .qr-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .qr-actions button {
+      background: transparent;
+      border: 1px solid var(--grid);
+      color: var(--text);
+      font-family: var(--mono);
+      padding: 8px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .qr-actions button:hover {
+      border-color: var(--text);
+    }
+    </style>
+  </head>
+  <body>
+    <div id="key-screen" style="display:none">
+      <div class="key-card">
+        <h2>Connect your sessions</h2>
+        <p>Paste your session tokens to monitor usage. Connect any providers you use — each polls independently.</p>
+
+        <button class="scan-button" id="open-scan">
+          <span class="scan-button-icon">▦</span>
+          Scan QR from another device
+        </button>
+        <div class="or-divider"><span>or paste tokens manually</span></div>
+
+        <div class="provider-field">
+          <div class="provider-field-head">
+            <label for="claude-key-input">Claude <code>sessionKey</code></label>
+            <span class="connected-badge"
+              id="claude-connected-badge">✓ connected</span>
+          </div>
+          <input id="claude-key-input" type="password"
+            placeholder="sk-ant-sid01-..." autocomplete="off"
+            spellcheck="false" />
+          <div
+            class="provider-hint">devtools → Application / Storage → Cookies → claude.ai → <b>sessionKey</b></div>
+          <button class="provider-connect"
+            id="claude-connect">Connect Claude</button>
+          <div class="provider-error-msg" id="claude-key-error"></div>
+        </div>
+
+        <div class="provider-field">
+          <div class="provider-field-head">
+            <label for="chatgpt-session-0-input">ChatGPT session cookies</label>
+            <span class="connected-badge"
+              id="chatgpt-connected-badge">✓ connected</span>
+          </div>
+          <input id="chatgpt-session-0-input" type="password"
+            placeholder="__Secure-next-auth.session-token.0" autocomplete="off"
+            spellcheck="false" />
+          <input id="chatgpt-session-1-input" type="password"
+            placeholder="__Secure-next-auth.session-token.1" autocomplete="off"
+            spellcheck="false" style="margin-top:6px" />
+          <div
+            class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy the values of <b>session-token.0</b> and <b>session-token.1</b></div>
+          <button class="provider-connect"
+            id="chatgpt-connect">Connect ChatGPT</button>
+          <div class="provider-error-msg" id="chatgpt-key-error"></div>
+        </div>
+
+        <div class="provider-field">
+          <div class="provider-field-head">
+            <label
+              for="opencode-key-input">OpenCode <code>auth</code> cookie</label>
+            <span class="connected-badge"
+              id="opencode-connected-badge">✓ connected</span>
+          </div>
+          <input id="opencode-key-input" type="password"
+            placeholder="Fe26.2**..." autocomplete="off" spellcheck="false" />
+          <div
+            class="provider-hint">devtools → Application / Storage → Cookies → opencode.ai → <b>auth</b></div>
+          <div class="provider-field" style="margin-top:10px">
+            <label for="opencode-workspace-input">Workspace ID</label>
+            <input id="opencode-workspace-input" type="text"
+              placeholder="wrk_01KYKN6HZ9HQ041NPY12S9ZQ11" autocomplete="off"
+              spellcheck="false" />
+            <div
+              class="provider-hint">from the URL: opencode.ai/workspace/<b>wrk_01…</b>/go — found on any workspace page</div>
+          </div>
+          <button class="provider-connect"
+            id="opencode-connect">Connect OpenCode</button>
+          <div class="provider-error-msg" id="opencode-key-error"></div>
+        </div>
+
+        <a class="back-to-dash" id="back-to-dash">← back to dashboard</a>
+        <div class="key-help">
+        Stored locally on this machine. Only used to poll your own usage.<br>
+        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> two session-token cookies &nbsp;|&nbsp; <b>OpenCode:</b> auth
+      </div>
+      </div>
+    </div>
+
+    <!-- ---------- share (desktop shows a QR) ---------- -->
+    <div id="share-modal" class="qr-overlay" style="display:none">
+      <div class="qr-card">
+        <div class="qr-warning">
+          This code lets your phone claim your connected accounts — it works
+          once, from a device on this network, and stops working after a
+          couple of minutes. Only show it to your own device.
+        </div>
+        <canvas id="share-canvas"></canvas>
+        <div class="qr-status" id="share-status">preparing…</div>
+        <div class="qr-actions">
+          <button id="share-stop">Stop sharing</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- scan (phone reads the QR) ---------- -->
+    <div id="scan-modal" class="qr-overlay" style="display:none">
+      <div class="qr-card">
+        <div class="scan-viewport" id="scan-viewport">
+          <video id="scan-video" autoplay playsinline muted></video>
+          <div class="scan-frame">
+            <span class="tl"></span><span class="tr"></span>
+            <span class="bl"></span><span class="br"></span>
+          </div>
+        </div>
+        <div class="qr-status" id="scan-status">starting camera…</div>
+        <div class="qr-actions">
+          <button id="scan-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dashboard" style="display:none">
+      <div class="wrap">
+        <div class="topbar">
+          <div class="brand">AI Usage</div>
+          <div class="topbar-right">
+            <span id="updated-ago">--</span>
+            <span
+              class="clock">local time <span id="clock">--:--:--</span></span>
+            <details class="actions-menu">
+              <summary>manage</summary>
+              <div class="actions-popover">
+                <a class="reset-link" id="connect-provider">connect provider</a>
+                <a class="reset-link" id="share-connections">share to phone</a>
+                <a class="reset-link" id="reset-claude">reset claude</a>
+                <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
+                <a class="reset-link" id="reset-opencode">reset opencode</a>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <h1>Rate limit status</h1>
+        <div
+          class="sub">Claude.ai, ChatGPT, and OpenCode Go limits, refreshed automatically.</div>
+
+        <div class="providers-grid">
+          <!---------- Claude section ---------->
+          <section class="provider-section" id="claude-section">
+            <div class="provider-head">
+              <h2>Claude.ai</h2>
+              <span class="provider-badge ok" id="claude-badge">connected</span>
+            </div>
+            <div class="provider-error" id="claude-error" style="display:none">
+              <div
+                class="msg"><b id="claude-error-kind">error</b><span id="claude-error-msg"></span></div>
+              <button id="claude-error-dismiss">dismiss</button>
+            </div>
+
+            <div class="grid2">
+              <div class="panel" data-tag="session window">
+                <div class="row-head">
+                  <div class="label">5-hour session</div>
+                  <div class="status" id="status-5h">--</div>
+                </div>
+                <div
+                  class="pct"><span id="pct-5h">--</span><small>%</small></div>
+                <div class="meter" id="meter-5h"></div>
+                <div
+                  class="countdown">resets in <span id="cd-5h">--</span></div>
+                <div
+                  class="meta"><span>resets at</span><b id="reset-5h-time">--</b></div>
+                <div class="meta" id="spend-5h-row"
+                  style="display:none"><span>spend</span><b id="spend-5h">--</b></div>
+              </div>
+
+              <div class="panel" data-tag="7-day window">
+                <div class="row-head">
+                  <div class="label">Weekly (all models)</div>
+                  <div class="status" id="status-7d">--</div>
+                </div>
+                <div
+                  class="pct"><span id="pct-7d">--</span><small>%</small></div>
+                <div class="meter" id="meter-7d"></div>
+                <div
+                  class="countdown">resets in <span id="cd-7d">--</span></div>
+                <div
+                  class="meta"><span>resets at</span><b id="reset-7d-time">--</b></div>
+                <div class="meta" id="spend-7d-row"
+                  style="display:none"><span>spend</span><b id="spend-7d">--</b></div>
+              </div>
+            </div>
+
+            <details class="provider-details">
+              <summary>model and credit details</summary>
+              <div class="panel" data-tag="model-scoped weekly"
+                id="scoped-panel" style="display:none">
+                <div id="scoped-limits"></div>
+              </div>
+
+              <div class="panel footer-panel" data-tag="spend / credits">
+                <div class="spend-row">
+                  <span>Usage-based spend</span>
+                  <span class="tag" id="spend-tag">--</span>
+                </div>
+                <div class="spend-row" id="credits-row"
+                  style="margin-top:10px;display:none">
+                  <span>Extra credits used</span>
+                  <span id="credits-used">--</span>
+                </div>
+                <div class="note">
+              Extra usage credits cover you once a plan limit is hit.
+              <a href="https://support.claude.com/articles/12429409" target="_blank" rel="noopener">Learn more &rarr;</a>
+            </div>
+              </div>
+            </details>
+          </section>
+
+          <!---------- ChatGPT section ---------->
+          <section class="provider-section" id="chatgpt-section">
+            <div class="provider-head">
+              <h2>ChatGPT</h2>
+              <span class="provider-badge ok"
+                id="chatgpt-badge">connected</span>
+            </div>
+            <div class="provider-error" id="chatgpt-error" style="display:none">
+              <div
+                class="msg"><b id="chatgpt-error-kind">error</b><span id="chatgpt-error-msg"></span></div>
+              <button id="chatgpt-error-dismiss">dismiss</button>
+            </div>
+
+            <div class="grid2" id="chatgpt-limits"></div>
+
+            <details class="provider-details">
+              <summary>account details</summary>
+              <div class="panel" data-tag="account">
+                <div
+                  class="spend-row"><span>Plan</span><span class="tag" id="chatgpt-plan">--</span></div>
+                <div class="spend-row"
+                  style="margin-top:10px"><span>Credit balance</span><span id="chatgpt-credits">--</span></div>
+                <div
+                  class="note">ChatGPT-plan usage reported for Codex and Work. Regular ChatGPT chat, images, voice, and uploads have separate limits.</div>
+              </div>
+            </details>
+          </section>
+
+          <!---------- OpenCode section ---------->
+          <section class="provider-section" id="opencode-section">
+            <div class="provider-head">
+              <h2>OpenCode Go</h2>
+              <span class="provider-badge ok"
+                id="opencode-badge">connected</span>
+            </div>
+            <div class="provider-error" id="opencode-error"
+              style="display:none">
+              <div
+                class="msg"><b id="opencode-error-kind">error</b><span id="opencode-error-msg"></span></div>
+              <button id="opencode-error-dismiss">dismiss</button>
+            </div>
+
+            <div class="grid3">
+              <div class="panel" data-tag="rolling window">
+                <div class="row-head">
+                  <div class="label">Rolling Usage</div>
+                  <div class="status" id="status-oc-rolling">--</div>
+                </div>
+                <div
+                  class="pct"><span id="pct-oc-rolling">--</span><small>%</small></div>
+                <div class="meter" id="meter-oc-rolling"></div>
+                <div
+                  class="countdown">resets in <span id="cd-oc-rolling">--</span></div>
+              </div>
+
+              <div class="panel" data-tag="7-day window">
+                <div class="row-head">
+                  <div class="label">Weekly Usage</div>
+                  <div class="status" id="status-oc-weekly">--</div>
+                </div>
+                <div
+                  class="pct"><span id="pct-oc-weekly">--</span><small>%</small></div>
+                <div class="meter" id="meter-oc-weekly"></div>
+                <div
+                  class="countdown">resets in <span id="cd-oc-weekly">--</span></div>
+              </div>
+
+              <div class="panel" data-tag="30-day window">
+                <div class="row-head">
+                  <div class="label">Monthly Usage</div>
+                  <div class="status" id="status-oc-monthly">--</div>
+                </div>
+                <div
+                  class="pct"><span id="pct-oc-monthly">--</span><small>%</small></div>
+                <div class="meter" id="meter-oc-monthly"></div>
+                <div
+                  class="countdown">resets in <span id="cd-oc-monthly">--</span></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="legend">
+          <div><span class="dot" style="background:var(--green)"></span>0-59% normal</div>
+          <div><span class="dot" style="background:var(--amber)"></span>60-89% elevated</div>
+          <div><span class="dot" style="background:var(--red)"></span>90-100% critical</div>
+        </div>
+
+        <div class="stamp" id="stamp"></div>
+      </div>
+    </div>
+
+    <script src="/__denoapk/runtime.js"></script>
+    <script type="module" src="./dist/app.js"></script>
+  </body>
+</html>

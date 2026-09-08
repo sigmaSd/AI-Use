@@ -1,4 +1,4 @@
-# aiuse
+# AI-Use
 
 Usage monitor for Claude.ai, ChatGPT, and OpenCode Go — five-hour/weekly
 limits, reset countdowns, and spend, in one window. Desktop app (Linux,

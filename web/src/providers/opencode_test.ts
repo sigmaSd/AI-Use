@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { parseOpenCodeUsage } from "./parse_usage.ts";
+import { parseOpenCodeUsage } from "./opencode.ts";
 
 // ---------- helper: build a minimal HTML wrapper ----------
 function wrap(data: string): string {

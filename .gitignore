@@ -3,3 +3,4 @@ io.github.sigmasd.aiuse
 dist
 build/
 .flatpak-builder/
+web/dist/

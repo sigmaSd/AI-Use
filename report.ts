@@ -4,9 +4,9 @@
  * aiuse — usage monitor for Claude.ai, ChatGPT, and OpenCode Go
  *
  * The UI and all provider logic live in ./web and run entirely in the page,
- * so the same bundle also ships inside an Android APK (see the denapk
+ * so the same bundle also ships inside an Android APK (see the denoapk
  * packager). This file is only the desktop host: it serves ./web, answers the
- * denapk proxy route, and opens the window.
+ * denoapk proxy route, and opens the window.
  *
  * The proxy exists because a browser refuses to send `Cookie`, `User-Agent`,
  * `Referer` and `Sec-Fetch-*`, and the provider APIs send no CORS headers.
@@ -29,8 +29,8 @@ const HERE = import.meta.dirname!;
 const WEB_ROOT = join(HERE, "web");
 const RUNTIME_JS = join(HERE, "host", "runtime.js");
 
-const PROXY_PREFIX = "/__denapk/proxy/";
-const HEADER_PREFIX = "x-denapk-h-";
+const PROXY_PREFIX = "/__denoapk/proxy/";
+const HEADER_PREFIX = "x-denoapk-h-";
 
 /** Env overrides the page can't read itself, appended to the runtime shim. */
 function envScript(): string {
@@ -39,13 +39,13 @@ function envScript(): string {
     const v = Deno.env.get(name);
     if (v) env[name] = v;
   }
-  return `\nglobalThis.__DENAPK_ENV = ${JSON.stringify(env)};\n`;
+  return `\nglobalThis.__DENOAPK_ENV = ${JSON.stringify(env)};\n`;
 }
 
 /**
  * Replay a request the page could not make itself.
  *
- * The shim moved every header to `x-denapk-h-*` so the browser would not strip
+ * The shim moved every header to `x-denoapk-h-*` so the browser would not strip
  * the forbidden ones; restore the real names and forward.
  */
 async function handleProxy(req: Request, encodedTarget: string) {
@@ -110,7 +110,7 @@ async function handle(req: Request): Promise<Response> {
     return await handleProxy(req, url.pathname.slice(PROXY_PREFIX.length));
   }
 
-  if (url.pathname === "/__denapk/runtime.js") {
+  if (url.pathname === "/__denoapk/runtime.js") {
     const js = await Deno.readTextFile(RUNTIME_JS) + envScript();
     return new Response(js, {
       headers: {

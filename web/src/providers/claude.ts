@@ -3,7 +3,7 @@
  *
  * Lifted from report.ts unchanged, including the browser-mimicking headers.
  * `Cookie`, `User-Agent`, `Referer` and `Sec-Fetch-*` are forbidden request
- * headers in a browser, but the denapk runtime shim rewrites this call through
+ * headers in a browser, but the denoapk runtime shim rewrites this call through
  * the host proxy before the browser ever sees it — see host/runtime.js.
  */
 

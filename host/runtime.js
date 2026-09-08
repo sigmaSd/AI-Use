@@ -1,5 +1,5 @@
 /**
- * denapk runtime shim — injected by the host, never imported by app code.
+ * denoapk runtime shim — injected by the host, never imported by app code.
  *
  * App code writes ordinary Deno-style fetch:
  *
@@ -8,7 +8,7 @@
  * A WebView would drop `Cookie`, `User-Agent`, `Referer` and `Sec-Fetch-*`
  * (forbidden request headers) and then fail the CORS check anyway. So this
  * shim rewrites cross-origin requests to a host-served proxy path, carrying
- * the headers under an `x-denapk-h-` prefix that the browser will send
+ * the headers under an `x-denoapk-h-` prefix that the browser will send
  * happily. The host strips the prefix and performs the real request.
  *
  * This runs *before* fetch, while `init.headers` is still an ordinary object,
@@ -18,8 +18,8 @@
  * APK, so both platforms agree on the wire format.
  */
 (function () {
-  const PROXY = "/__denapk/proxy/";
-  const PREFIX = "x-denapk-h-";
+  const PROXY = "/__denoapk/proxy/";
+  const PREFIX = "x-denoapk-h-";
   const orig = globalThis.fetch;
 
   globalThis.fetch = function (input, init = {}) {
@@ -45,7 +45,7 @@
     });
   };
 
-  // Hosts may append a `__DENAPK_ENV` assignment after this file; default it
+  // Hosts may append a `__DENOAPK_ENV` assignment after this file; default it
   // so app code can read it unconditionally.
-  globalThis.__DENAPK_ENV = globalThis.__DENAPK_ENV || {};
+  globalThis.__DENOAPK_ENV = globalThis.__DENOAPK_ENV || {};
 })();

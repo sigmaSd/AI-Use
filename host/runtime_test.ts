@@ -1,5 +1,5 @@
 /**
- * Tests for the denapk runtime shim.
+ * Tests for the denoapk runtime shim.
  *
  * The whole Android story rests on one assumption: a `new Headers()` copy
  * keeps forbidden request names (Cookie, User-Agent, Referer, Sec-Fetch-*)
@@ -57,7 +57,7 @@ Deno.test("cross-origin requests are rewritten to the proxy path", async () => {
   assertEquals(calls.length, 1);
   assertEquals(
     calls[0].url,
-    "/__denapk/proxy/" +
+    "/__denoapk/proxy/" +
       encodeURIComponent("https://claude.ai/api/organizations"),
   );
 });
@@ -75,23 +75,23 @@ Deno.test("forbidden headers survive the rewrite", async () => {
   });
 
   const sent = calls[0].init.headers as Record<string, string>;
-  assertEquals(sent["x-denapk-h-cookie"], "sessionKey=secret");
-  assertEquals(sent["x-denapk-h-user-agent"], "Mozilla/5.0");
-  assertEquals(sent["x-denapk-h-referer"], "https://claude.ai/");
-  assertEquals(sent["x-denapk-h-sec-fetch-mode"], "cors");
-  assertEquals(sent["x-denapk-h-anthropic-client-platform"], "web_claude_ai");
+  assertEquals(sent["x-denoapk-h-cookie"], "sessionKey=secret");
+  assertEquals(sent["x-denoapk-h-user-agent"], "Mozilla/5.0");
+  assertEquals(sent["x-denoapk-h-referer"], "https://claude.ai/");
+  assertEquals(sent["x-denoapk-h-sec-fetch-mode"], "cors");
+  assertEquals(sent["x-denoapk-h-anthropic-client-platform"], "web_claude_ai");
   // No unprefixed leftovers — the browser would strip those.
   assertEquals(
-    Object.keys(sent).every((k) => k.startsWith("x-denapk-h-")),
+    Object.keys(sent).every((k) => k.startsWith("x-denoapk-h-")),
     true,
   );
 });
 
 Deno.test("the encoded target cannot be confused with the proxy path", async () => {
   const { fetch: f, calls } = await loadShim("http://127.0.0.1:8137");
-  await f("https://evil.test/a/__denapk/proxy/b?x=1#frag");
+  await f("https://evil.test/a/__denoapk/proxy/b?x=1#frag");
   // Everything after the prefix is one opaque component.
-  const rest = calls[0].url.slice("/__denapk/proxy/".length);
+  const rest = calls[0].url.slice("/__denoapk/proxy/".length);
   assertEquals(rest.includes("/"), false);
   assertStringIncludes(decodeURIComponent(rest), "https://evil.test/a/");
 });

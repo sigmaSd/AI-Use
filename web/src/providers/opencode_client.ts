@@ -2,7 +2,7 @@
  * OpenCode Go usage client.
  *
  * Lifted from report.ts unchanged. Like the Claude client, the browser-shaped
- * headers survive because the denapk runtime shim proxies this request — see
+ * headers survive because the denoapk runtime shim proxies this request — see
  * host/runtime.js.
  */
 

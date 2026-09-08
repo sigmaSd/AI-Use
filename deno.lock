@@ -6,7 +6,9 @@
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/media-types@1": "1.1.0",
-    "jsr:@std/path@1": "1.1.6"
+    "jsr:@std/path@1": "1.1.6",
+    "npm:@zxing/library@0.21": "0.21.3",
+    "npm:qrcode-generator@1": "1.5.2"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -28,11 +30,33 @@
       ]
     }
   },
+  "npm": {
+    "@zxing/library@0.21.3": {
+      "integrity": "sha512-hZHqFe2JyH/ZxviJZosZjV+2s6EDSY0O24R+FQmlWZBZXP9IqMo7S3nb3+2LBWxodJQkSurdQGnqE7KXqrYgow==",
+      "dependencies": [
+        "ts-custom-error"
+      ],
+      "optionalDependencies": [
+        "@zxing/text-encoding"
+      ]
+    },
+    "@zxing/text-encoding@0.9.0": {
+      "integrity": "sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA=="
+    },
+    "qrcode-generator@1.5.2": {
+      "integrity": "sha512-pItrW0Z9HnDBnFmgiNrY1uxRdri32Uh9EjNYLPVC2zZ3ZRIIEqBoDgm4DkvDwNNDHTK7FNkmr8zAa77BYc9xNw=="
+    },
+    "ts-custom-error@3.3.1": {
+      "integrity": "sha512-5OX1tzOjxWEgsr/YEUWSuPrQ00deKLh6D7OTWcvNHm12/7QPyRh8SYpyWvA4IZv8H/+GQWQEh/kwo95Q9OVW1A=="
+    }
+  },
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@1.0.19",
       "jsr:@std/media-types@1",
-      "jsr:@std/path@1"
+      "jsr:@std/path@1",
+      "npm:@zxing/library@0.21",
+      "npm:qrcode-generator@1"
     ]
   }
 }

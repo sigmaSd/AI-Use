@@ -13,6 +13,7 @@
  */
 
 import * as api from "./api.ts";
+import { scanForTokens, shareConnections } from "./share/modal.ts";
 
 api.init();
 
@@ -685,6 +686,16 @@ byId("back-to-dash").addEventListener("click", function () {
 // "connect provider" link in top bar
 byId("connect-provider").addEventListener("click", function () {
   showKeyScreenWithState();
+});
+
+// share connected tokens to another device via QR, and scan one in return
+byId("share-connections").addEventListener("click", function () {
+  shareConnections();
+});
+byId("open-scan").addEventListener("click", function () {
+  scanForTokens(function () {
+    checkStatusAndShow();
+  });
 });
 
 // ---- reset ----

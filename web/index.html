@@ -561,6 +561,206 @@
       opacity: .7;
       text-align: right;
     }
+
+    /* ---------- QR share / scan ---------- */
+    /* fast-path entry on the key screen */
+    .scan-button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(79, 214, 138, .06);
+      color: var(--text);
+      border: 1px solid var(--green-dim);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 11px 12px;
+      border-radius: 2px;
+      cursor: pointer;
+      letter-spacing: .02em;
+    }
+    .scan-button:hover {
+      background: var(--green-dim);
+      border-color: var(--green);
+      color: #eafff2;
+    }
+    .scan-button-icon {
+      font-size: 15px;
+      line-height: 1;
+    }
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+      font-size: 10px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+    .or-divider::before,
+    .or-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--grid);
+    }
+
+    .qr-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 8, 7, .85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 20;
+    }
+    .qr-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 2px;
+      padding: 24px 22px;
+      position: relative;
+      text-align: center;
+    }
+    .qr-card::before {
+      position: absolute;
+      top: -9px;
+      left: 16px;
+      background: var(--bg);
+      padding: 0 8px;
+      font-size: 10px;
+      letter-spacing: .14em;
+      color: var(--dim);
+    }
+    #share-modal .qr-card::before {
+      content: "device pairing";
+    }
+    #scan-modal .qr-card::before {
+      content: "scan to import";
+    }
+    .qr-warning {
+      color: var(--amber);
+      font-size: 11px;
+      line-height: 1.5;
+      border: 1px solid var(--green-dim);
+      background: rgba(224, 169, 79, .08);
+      padding: 10px 12px;
+      border-radius: 2px;
+      text-align: left;
+      margin-bottom: 16px;
+    }
+    #share-canvas {
+      width: 100%;
+      /* As large as the card comfortably allows — a denser payload (the
+         data frames) packs more modules into the same box, so keeping this
+         small shrinks each module below what a phone camera can resolve. */
+      max-width: 360px;
+      image-rendering: pixelated;
+      background: #fff;
+      border-radius: 2px;
+    }
+
+    /* scan viewport: video + aligned viewfinder guide + pulse-on-detect */
+    .scan-viewport {
+      position: relative;
+      border-radius: 2px;
+      overflow: hidden;
+      background: #000;
+    }
+    #scan-video {
+      display: block;
+      width: 100%;
+      max-height: 50vh;
+      object-fit: cover;
+    }
+    .scan-frame {
+      position: absolute;
+      inset: 12%;
+      border: 2px solid rgba(79, 214, 138, .55);
+      border-radius: 4px;
+      pointer-events: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .scan-frame::before,
+    .scan-frame::after,
+    .scan-frame > .tl,
+    .scan-frame > .tr,
+    .scan-frame > .bl,
+    .scan-frame > .br {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border: 3px solid var(--green);
+    }
+    .scan-frame > .tl {
+      top: -3px;
+      left: -3px;
+      border-right: none;
+      border-bottom: none;
+    }
+    .scan-frame > .tr {
+      top: -3px;
+      right: -3px;
+      border-left: none;
+      border-bottom: none;
+    }
+    .scan-frame > .bl {
+      bottom: -3px;
+      left: -3px;
+      border-right: none;
+      border-top: none;
+    }
+    .scan-frame > .br {
+      bottom: -3px;
+      right: -3px;
+      border-left: none;
+      border-top: none;
+    }
+    /* Toggled on briefly by JS every time a frame is successfully decoded —
+       the "yes, the camera just read something" feedback that was missing. */
+    .scan-viewport.detected .scan-frame {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(79, 214, 138, .35) inset;
+    }
+
+    .qr-status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--dim);
+      min-height: 16px;
+    }
+    .qr-status.err {
+      color: var(--red);
+    }
+    .qr-status.ok {
+      color: var(--green);
+    }
+    .qr-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .qr-actions button {
+      background: transparent;
+      border: 1px solid var(--grid);
+      color: var(--text);
+      font-family: var(--mono);
+      padding: 8px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .qr-actions button:hover {
+      border-color: var(--text);
+    }
     </style>
   </head>
   <body>
@@ -568,6 +768,12 @@
       <div class="key-card">
         <h2>Connect your sessions</h2>
         <p>Paste your session tokens to monitor usage. Connect any providers you use — each polls independently.</p>
+
+        <button class="scan-button" id="open-scan">
+          <span class="scan-button-icon">▦</span>
+          Scan QR from another device
+        </button>
+        <div class="or-divider"><span>or paste tokens manually</span></div>
 
         <div class="provider-field">
           <div class="provider-field-head">
@@ -636,6 +842,39 @@
       </div>
     </div>
 
+    <!-- ---------- share (desktop shows a QR) ---------- -->
+    <div id="share-modal" class="qr-overlay" style="display:none">
+      <div class="qr-card">
+        <div class="qr-warning">
+          This code lets your phone claim your connected accounts — it works
+          once, from a device on this network, and stops working after a
+          couple of minutes. Only show it to your own device.
+        </div>
+        <canvas id="share-canvas"></canvas>
+        <div class="qr-status" id="share-status">preparing…</div>
+        <div class="qr-actions">
+          <button id="share-stop">Stop sharing</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- scan (phone reads the QR) ---------- -->
+    <div id="scan-modal" class="qr-overlay" style="display:none">
+      <div class="qr-card">
+        <div class="scan-viewport" id="scan-viewport">
+          <video id="scan-video" autoplay playsinline muted></video>
+          <div class="scan-frame">
+            <span class="tl"></span><span class="tr"></span>
+            <span class="bl"></span><span class="br"></span>
+          </div>
+        </div>
+        <div class="qr-status" id="scan-status">starting camera…</div>
+        <div class="qr-actions">
+          <button id="scan-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="dashboard" style="display:none">
       <div class="wrap">
         <div class="topbar">
@@ -648,6 +887,7 @@
               <summary>manage</summary>
               <div class="actions-popover">
                 <a class="reset-link" id="connect-provider">connect provider</a>
+                <a class="reset-link" id="share-connections">share to phone</a>
                 <a class="reset-link" id="reset-claude">reset claude</a>
                 <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
                 <a class="reset-link" id="reset-opencode">reset opencode</a>

@@ -136,10 +136,18 @@ export async function scanForTokens(onImported: () => void) {
   let scanner: QrScanner | undefined;
   let pulseTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Reveal the <video> only once it's actually painting frames; until then
+  // the black viewport hides the WebView's built-in play-button placeholder.
+  function onPlaying() {
+    video.classList.add("live");
+  }
+
   function close() {
     closed = true;
     scanner?.stop();
     if (pulseTimer !== undefined) clearTimeout(pulseTimer);
+    video.removeEventListener("playing", onPlaying);
+    video.classList.remove("live");
     modal.style.display = "none";
     cancelBtn.removeEventListener("click", close);
   }
@@ -151,6 +159,8 @@ export async function scanForTokens(onImported: () => void) {
   }
 
   cancelBtn.addEventListener("click", close);
+  video.classList.remove("live");
+  video.addEventListener("playing", onPlaying);
   modal.style.display = "flex";
   status.className = "qr-status";
   status.textContent = "point at the code shown on your other device…";
@@ -197,6 +207,11 @@ export async function scanForTokens(onImported: () => void) {
       status.className = "qr-status err";
       status.textContent = "camera error: " +
         (err instanceof Error ? err.message : String(err));
+    },
+    onUnsupported() {
+      status.className = "qr-status err";
+      status.textContent =
+        "this device's browser can't scan QR codes — paste the tokens manually";
     },
   });
 

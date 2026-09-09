@@ -2,19 +2,17 @@
 /**
  * Phone side: scan a <video> element for a pairing URL, then fetch it.
  *
- * Two decoders, picked at runtime:
+ * Decoding is the platform's native `BarcodeDetector` (ML-Kit-backed on the
+ * Android WebView — the same fast path Google's own camera uses). A warm
+ * `detect()` is ~25ms, so it runs every frame via requestVideoFrameCallback
+ * rather than on a throttled loop. There is no JS-decoder fallback: scanning
+ * only ever runs on Android now (the desktop build hides the scan button —
+ * see web/src/platform.ts), and every Android WebView we target ships the
+ * API. If it's somehow missing, `onUnsupported()` fires instead.
  *
- *   - `BarcodeDetector` (native, ML-Kit-backed on Android WebView) when the
- *     platform exposes it and it lists `qr_code`. This is the same fast path
- *     Google's own camera uses — a warm `detect()` is ~25ms, so we can run it
- *     every frame via requestVideoFrameCallback instead of a throttled loop.
- *   - `@zxing/library` otherwise (older WebViews, desktop webview, any future
- *     iOS build). This is the original pure-JS decoder; it scans a frame,
- *     waits ~500ms, scans again.
- *
- * The camera setup (explicit resolution, environment-facing camera) is shared
- * and unchanged from the original design — that infrastructure was hard-won in
- * on-device testing and applies regardless of which decoder reads the frame.
+ * The camera setup (explicit resolution, environment-facing camera) is
+ * unchanged from the original design — that infrastructure was hard-won in
+ * on-device testing.
  *
  * fetch(url) here is cross-origin (this page's own origin is
  * https://appassets.androidplatform.net; the pairing URL is a bare
@@ -26,8 +24,6 @@
  * that, reused here as-is.
  */
 
-import { BrowserQRCodeReader } from "@zxing/library";
-
 export interface ScanCallbacks {
   /** A QR was read, but it isn't a pairing URL — scanning continues. */
   onNotAPairingCode(): void;
@@ -36,6 +32,8 @@ export interface ScanCallbacks {
   onComplete(json: string): void;
   onFetchError(err: unknown): void;
   onCameraError(err: unknown): void;
+  /** This WebView has no usable BarcodeDetector — scanning can't run here. */
+  onUnsupported(): void;
 }
 
 export interface QrScanner {
@@ -56,7 +54,7 @@ interface BarcodeDetectorCtor {
   getSupportedFormats(): Promise<string[]>;
 }
 
-/** null when unavailable or QR isn't a supported format — caller uses ZXing. */
+/** null when the API is missing or doesn't do QR — caller reports unsupported. */
 async function makeBarcodeDetector(): Promise<BarcodeDetectorLike | null> {
   const Ctor = (globalThis as { BarcodeDetector?: BarcodeDetectorCtor })
     .BarcodeDetector;
@@ -90,8 +88,8 @@ export async function startScan(
   let stopped = false;
   let handled = false; // stop acting after the first valid pairing URL
   let stream: MediaStream | undefined;
-  let zxingReader: BrowserQRCodeReader | undefined;
   let rvfcHandle: number | undefined;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
 
   async function onDecoded(text: string) {
     if (handled || stopped) return;
@@ -120,13 +118,17 @@ export async function startScan(
     if (rvfcHandle !== undefined && "cancelVideoFrameCallback" in video) {
       video.cancelVideoFrameCallback(rvfcHandle);
     }
-    zxingReader?.reset();
-    // ZXing stops the tracks it was handed on reset(); the BarcodeDetector
-    // path has no such owner, so stop them here too. Idempotent either way.
+    if (pollTimer !== undefined) clearInterval(pollTimer);
     stream?.getTracks().forEach((t) => t.stop());
   }
 
   try {
+    const detector = await makeBarcodeDetector();
+    if (!detector) {
+      cb.onUnsupported();
+      return { stop };
+    }
+
     // Without an explicit size, this WebView fell back to 480x640 in
     // testing — at that resolution even a small QR, photographed off a
     // monitor a foot or two away, has individual modules smaller than a
@@ -139,32 +141,30 @@ export async function startScan(
         height: { ideal: 1080 },
       },
     });
+    video.srcObject = stream;
+    await video.play().catch(() => {});
 
-    const detector = await makeBarcodeDetector();
-    if (detector && "requestVideoFrameCallback" in video) {
-      video.srcObject = stream;
-      await video.play().catch(() => {});
+    const scanFrame = async () => {
+      if (stopped) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length > 0) void onDecoded(codes[0].rawValue);
+      } catch {
+        // Transient per-frame decode failures are expected — the code may
+        // be half in frame, blurred mid-focus, glared. Keep going.
+      }
+      // requestVideoFrameCallback ties the loop to actual painted frames
+      // (and pauses it when the video is hidden); a timer is the fallback
+      // for the rare WebView that has BarcodeDetector but not rVFC.
+      if (!stopped && "requestVideoFrameCallback" in video) {
+        rvfcHandle = video.requestVideoFrameCallback(scanFrame);
+      }
+    };
 
-      const scanFrame = async () => {
-        if (stopped) return;
-        try {
-          const codes = await detector.detect(video);
-          if (codes.length > 0) void onDecoded(codes[0].rawValue);
-        } catch {
-          // Transient per-frame decode failures are expected — the code
-          // may be half in frame, blurred mid-focus, glared. Keep going.
-        }
-        if (!stopped) {
-          rvfcHandle = video.requestVideoFrameCallback(scanFrame);
-        }
-      };
+    if ("requestVideoFrameCallback" in video) {
       rvfcHandle = video.requestVideoFrameCallback(scanFrame);
     } else {
-      zxingReader = new BrowserQRCodeReader();
-      await zxingReader.decodeFromStream(stream, video, (result) => {
-        if (stopped || !result) return;
-        void onDecoded(result.getText());
-      });
+      pollTimer = setInterval(scanFrame, 80);
     }
   } catch (err) {
     cb.onCameraError(err);

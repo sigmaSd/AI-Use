@@ -208,6 +208,11 @@ export async function scanForTokens(onImported: () => void) {
       status.textContent = "camera error: " +
         (err instanceof Error ? err.message : String(err));
     },
+    onUnsupported() {
+      status.className = "qr-status err";
+      status.textContent =
+        "this device's browser can't scan QR codes — paste the tokens manually";
+    },
   });
 
   scanner = started;

@@ -678,6 +678,25 @@
       width: 100%;
       max-height: 50vh;
       object-fit: cover;
+      /* Hidden behind the viewport's black fill until the stream actually
+         delivers frames — otherwise the WebView paints its own centred
+         play-button placeholder over the empty element while the camera
+         (and its permission prompt) spins up. JS adds .live on `playing`. */
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    #scan-video.live {
+      opacity: 1;
+    }
+    /* Belt-and-braces: kill the native media overlay/controls outright so
+       the play button can't flash even for a frame. */
+    #scan-video::-webkit-media-controls,
+    #scan-video::-webkit-media-controls-enclosure,
+    #scan-video::-webkit-media-controls-panel,
+    #scan-video::-webkit-media-controls-overlay-play-button,
+    #scan-video::-webkit-media-controls-start-playback-button {
+      display: none !important;
+      -webkit-appearance: none;
     }
     .scan-frame {
       position: absolute;

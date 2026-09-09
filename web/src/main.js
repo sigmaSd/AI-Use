@@ -14,6 +14,7 @@
 
 import * as api from "./api.ts";
 import { scanForTokens, shareConnections } from "./share/modal.ts";
+import { isDesktop } from "./platform.ts";
 
 api.init();
 
@@ -697,6 +698,14 @@ byId("open-scan").addEventListener("click", function () {
     checkStatusAndShow();
   });
 });
+// Scanning a QR is inherently the phone's half of the pairing flow — the
+// desktop is the one that *shows* the code. Hide the entry point (and its
+// "or paste tokens manually" divider) on desktop, where there's no camera to
+// point at anything anyway.
+if (isDesktop) {
+  byId("open-scan").style.display = "none";
+  byId("scan-or-divider").style.display = "none";
+}
 
 // ---- reset ----
 function resetProvider(provider) {

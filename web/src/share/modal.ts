@@ -13,13 +13,8 @@
 import * as store from "../store.ts";
 import * as api from "../api.ts";
 import { drawQr } from "./encode.ts";
+import { PAIRING_TTL_MS, pollShareStatus, publishShare } from "./pairApi.ts";
 import { type QrScanner, startScan } from "./decode.ts";
-
-/** Matches host/pairing.ts's own TTL — the server is authoritative; this is
- *  only so the UI can show a countdown and stop polling at roughly the same
- *  time the server would actually expire the code. */
-const PAIRING_TTL_MS = 2 * 60_000;
-const POLL_INTERVAL_MS = 1500;
 
 function byId<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -45,17 +40,6 @@ function currentPayload(): api.TokenRequest {
   return body;
 }
 
-function randomCode(): string {
-  // 8 bytes (64 bits) is far more than enough entropy for a secret that's
-  // single-use, same-LAN-only, and expires in 2 minutes — a shorter code
-  // keeps the QR itself smaller and easier to scan, which matters more here
-  // than a wider margin against a threat model that isn't realistic anyway.
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
-
 export async function shareConnections() {
   const payload = currentPayload();
   if (Object.keys(payload).length === 0) {
@@ -68,11 +52,11 @@ export async function shareConnections() {
   const status = byId("share-status");
   const stopBtn = byId<HTMLButtonElement>("share-stop");
 
-  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let stopPoll: (() => void) | undefined;
   let expireTimer: ReturnType<typeof setTimeout> | undefined;
 
   function close() {
-    if (pollTimer !== undefined) clearInterval(pollTimer);
+    stopPoll?.();
     if (expireTimer !== undefined) clearTimeout(expireTimer);
     modal.style.display = "none";
     stopBtn.removeEventListener("click", close);
@@ -84,33 +68,20 @@ export async function shareConnections() {
   status.textContent = "preparing…";
 
   try {
-    const code = randomCode();
-    const res = await fetch("/__denoapk/pair/publish", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, payload }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const { code, url } = await publishShare(payload);
 
-    drawQr(canvas, data.url);
+    drawQr(canvas, url);
     status.className = "qr-status";
     status.textContent = "waiting for your phone to scan…";
 
-    pollTimer = setInterval(async () => {
-      const s = await fetch(`/__denoapk/pair/status/${code}`).then((r) =>
-        r.json()
-      ).catch(() => null);
-      if (s?.status === "claimed-or-unknown") {
-        status.className = "qr-status ok";
-        status.textContent = "✓ received on your phone";
-        clearInterval(pollTimer);
-        setTimeout(close, 1500);
-      }
-    }, POLL_INTERVAL_MS);
+    stopPoll = pollShareStatus(code, () => {
+      status.className = "qr-status ok";
+      status.textContent = "✓ received on your phone";
+      setTimeout(close, 1500);
+    });
 
     expireTimer = setTimeout(() => {
-      if (pollTimer !== undefined) clearInterval(pollTimer);
+      stopPoll?.();
       status.className = "qr-status err";
       status.textContent = "code expired — share again to get a new one";
     }, PAIRING_TTL_MS);

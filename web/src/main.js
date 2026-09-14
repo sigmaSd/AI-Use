@@ -689,6 +689,13 @@ byId("connect-provider").addEventListener("click", function () {
   showKeyScreenWithState();
 });
 
+// QR import uses Android's native BarcodeDetector. The desktop WebKitGTK
+// runtime intentionally has no scan path; sharing out to a phone remains
+// available everywhere, but scanning in is an Android-only feature.
+if (globalThis.denoapk?.platform !== "android") {
+  byId("open-scan").style.display = "none";
+}
+
 // share connected tokens to another device via QR, and scan one in return
 byId("share-connections").addEventListener("click", function () {
   shareConnections();

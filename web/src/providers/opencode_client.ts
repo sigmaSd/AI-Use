@@ -2,11 +2,10 @@
  * OpenCode Go usage client.
  *
  * Lifted from report.ts unchanged. Like the Claude client, the browser-shaped
- * headers survive because the denoapk runtime shim proxies this request — see
- * host/runtime.js.
+ * headers survive because the denoapk fetch shim proxies this request.
  */
 
-import { envOverride, getOpenCodeWorkspace } from "../store.ts";
+import { getOpenCodeWorkspace } from "../store.ts";
 import { type OCUsageResponse, parseOpenCodeUsage } from "./opencode.ts";
 import { AuthError } from "./claude.ts";
 
@@ -30,8 +29,6 @@ function extractPageTitle(html: string): string {
 }
 
 function resolveOpenCodeWorkspace(_auth: string): string {
-  const override = envOverride("OPENCODE_WORKSPACE_ID");
-  if (override) return override;
   const cached = getOpenCodeWorkspace();
   if (cached) return cached;
 

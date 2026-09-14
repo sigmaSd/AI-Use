@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-net --allow-env --allow-read --allow-sys
+#!/usr/bin/env -S deno run --allow-net --allow-read --allow-sys
 /// <reference lib="deno.desktop" />
 /**
  * aiuse — usage monitor for Claude.ai, ChatGPT, and OpenCode Go
@@ -6,13 +6,15 @@
  * The UI and all provider logic live in ./web and run entirely in the page,
  * so the same bundle also ships inside an Android APK (see the denoapk
  * packager). This file is only the desktop host: it serves ./web, answers the
- * denoapk proxy and pairing routes, and opens the window.
+ * pairing routes, and opens the window. Cross-origin provider calls and
+ * the runtime shim are handled by denoapk's handleDenoapkRequest helper
+ * (the same routes the Android shell implements natively); the pairing
+ * routes below are app-specific and stay here.
  *
  * The proxy exists because a browser refuses to send `Cookie`, `User-Agent`,
  * `Referer` and `Sec-Fetch-*`, and the provider APIs send no CORS headers.
- * web/../host/runtime.js rewrites cross-origin requests here; this end undoes
- * the rewrite and performs the real request. The Android shell implements the
- * same two routes in shouldInterceptRequest.
+ * denoapk's fetch shim rewrites cross-origin requests to its proxy path;
+ * the handler undoes the rewrite and performs the real request.
  *
  * The pairing routes back the "share to phone" feature — see host/pairing.ts
  * for why a second Deno.serve() call is what makes it reachable from a phone
@@ -20,22 +22,18 @@
  *
  * - Session tokens are entered once in the UI and persist in localStorage.
  * - Organization / workspace IDs are auto-detected.
- * - Set CLAUDE_ORG_ID or OPENCODE_WORKSPACE_ID to override detection.
  *
  * Run:
- *   deno task bundle && deno desktop --allow-net --allow-env --allow-read --allow-sys report.ts
+ *   deno task bundle && deno desktop --allow-net --allow-read --allow-sys report.ts
  */
 
 import { contentType } from "@std/media-types/content-type";
 import { extname, join, normalize } from "@std/path";
+import { handleDenoapkRequest } from "@sigmasd/denoapk/handler";
 import { type PairingServer, startPairingServer } from "./host/pairing.ts";
 
 const HERE = import.meta.dirname!;
 const WEB_ROOT = join(HERE, "web");
-const RUNTIME_JS = join(HERE, "host", "runtime.js");
-
-const PROXY_PREFIX = "/__denoapk/proxy/";
-const HEADER_PREFIX = "x-denoapk-h-";
 
 // Assigned after Deno.serve(handle) below, not here — deliberately. The
 // desktop launcher forces loopback-only binding on whichever Deno.serve()
@@ -47,58 +45,6 @@ const HEADER_PREFIX = "x-denoapk-h-";
 // machine before landing on this ordering.
 // deno-lint-ignore prefer-const
 let pairing: PairingServer;
-
-/** Env overrides the page can't read itself, appended to the runtime shim. */
-function envScript(): string {
-  const env: Record<string, string> = {};
-  for (const name of ["CLAUDE_ORG_ID", "OPENCODE_WORKSPACE_ID"]) {
-    const v = Deno.env.get(name);
-    if (v) env[name] = v;
-  }
-  return `\nglobalThis.__DENOAPK_ENV = ${JSON.stringify(env)};\n`;
-}
-
-/**
- * Replay a request the page could not make itself.
- *
- * The shim moved every header to `x-denoapk-h-*` so the browser would not strip
- * the forbidden ones; restore the real names and forward.
- */
-async function handleProxy(req: Request, encodedTarget: string) {
-  let target: URL;
-  try {
-    target = new URL(decodeURIComponent(encodedTarget));
-  } catch {
-    return new Response("bad proxy target", { status: 400 });
-  }
-  if (target.protocol !== "https:" && target.protocol !== "http:") {
-    return new Response("unsupported protocol", { status: 400 });
-  }
-
-  const headers = new Headers();
-  for (const [name, value] of req.headers) {
-    if (name.startsWith(HEADER_PREFIX)) {
-      headers.set(name.slice(HEADER_PREFIX.length), value);
-    }
-  }
-
-  const upstream = await fetch(target, {
-    method: req.method,
-    headers,
-    body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
-    redirect: "follow",
-  });
-
-  // Strip hop-by-hop and CORS-relevant headers; the page reads this as
-  // same-origin, so upstream's own CORS policy is irrelevant here.
-  const out = new Headers();
-  for (const [name, value] of upstream.headers) {
-    if (name === "content-encoding" || name === "content-length") continue;
-    if (name.startsWith("access-control-")) continue;
-    out.set(name, value);
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: out });
-}
 
 async function serveStatic(pathname: string): Promise<Response> {
   const rel = normalize(pathname === "/" ? "/index.html" : pathname);
@@ -149,31 +95,23 @@ async function handlePairPublish(req: Request): Promise<Response> {
 }
 
 async function handle(req: Request): Promise<Response> {
+  // runtime.js + proxy come from denoapk's helper (same routes the Android
+  // shell implements natively). exec stays disabled — this app never calls
+  // it. Returns null for everything else, including the /api routes below.
+  const denoapkRes = await handleDenoapkRequest(req);
+  if (denoapkRes) return denoapkRes;
+
   const url = new URL(req.url);
 
-  if (url.pathname.startsWith(PROXY_PREFIX)) {
-    return await handleProxy(req, url.pathname.slice(PROXY_PREFIX.length));
-  }
-
-  if (url.pathname === "/__denoapk/pair/publish" && req.method === "POST") {
+  if (url.pathname === "/api/pair/publish" && req.method === "POST") {
     return await handlePairPublish(req);
   }
 
   if (
-    url.pathname.startsWith("/__denoapk/pair/status/") && req.method === "GET"
+    url.pathname.startsWith("/api/pair/status/") && req.method === "GET"
   ) {
-    const code = url.pathname.slice("/__denoapk/pair/status/".length);
+    const code = url.pathname.slice("/api/pair/status/".length);
     return json({ status: pairing.status(code) });
-  }
-
-  if (url.pathname === "/__denoapk/runtime.js") {
-    const js = await Deno.readTextFile(RUNTIME_JS) + envScript();
-    return new Response(js, {
-      headers: {
-        "content-type": "text/javascript; charset=utf-8",
-        "cache-control": "no-cache",
-      },
-    });
   }
 
   return await serveStatic(url.pathname);

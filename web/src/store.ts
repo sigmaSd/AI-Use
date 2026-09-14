@@ -71,10 +71,3 @@ export function setOpenCodeWorkspace(v: string) {
 export function clearOpenCodeWorkspace() {
   localStorage.removeItem(OPENCODE_WORKSPACE_KEY);
 }
-
-/** Host-supplied overrides, seeded from env by the Deno host; empty on Android. */
-export function envOverride(name: string): string | undefined {
-  const env = (globalThis as { __DENOAPK_ENV?: Record<string, string> })
-    .__DENOAPK_ENV;
-  return env?.[name];
-}

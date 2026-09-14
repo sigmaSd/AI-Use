@@ -3,11 +3,11 @@
  *
  * Lifted from report.ts unchanged, including the browser-mimicking headers.
  * `Cookie`, `User-Agent`, `Referer` and `Sec-Fetch-*` are forbidden request
- * headers in a browser, but the denoapk runtime shim rewrites this call through
- * the host proxy before the browser ever sees it — see host/runtime.js.
+ * headers in a browser, but the denoapk fetch shim rewrites this call through
+ * the host proxy before the browser ever sees it.
  */
 
-import { envOverride, getClaudeOrg, setClaudeOrg } from "../store.ts";
+import { getClaudeOrg, setClaudeOrg } from "../store.ts";
 
 export class AuthError extends Error {}
 
@@ -84,8 +84,6 @@ function claudeHeaders(token: string): Record<string, string> {
 }
 
 async function resolveClaudeOrg(token: string): Promise<string> {
-  const override = envOverride("CLAUDE_ORG_ID");
-  if (override) return override;
   const cached = getClaudeOrg();
   if (cached) return cached;
 

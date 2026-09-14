@@ -50,9 +50,9 @@ jobs:
       - run: deno task bundle
       - run: >
           deno desktop --target=${{ matrix.target }}
-          --allow-net --allow-env --allow-read --allow-sys
+          --allow-net --allow-read --allow-sys
           --exclude-unused-npm
-          --include ./web/index.html --include ./web/dist --include ./host/runtime.js
+          --include ./web/index.html --include ./web/dist
           --output ./dist/aiuse
           report.ts
       - name: Archive

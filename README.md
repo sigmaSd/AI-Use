@@ -37,7 +37,8 @@ tokens by hand onto a phone.
   desktop app's window and, packaged by
   [denoapk](https://github.com/sigmaSd/denoapk), inside the Android WebView.
   It talks to Claude/ChatGPT/OpenCode with ordinary `fetch`; a proxy shim
-  (`host/runtime.js`, `report.ts`) exists only because a browser can't send
+  (denoapk's `runtime.js`, served by `handleDenoapkRequest` on desktop)
+  exists only because a browser can't send
   `Cookie`/`User-Agent` itself and those APIs send no CORS headers — see
   `report.ts`'s own header comment for the rest.
 - **Desktop**: [`deno desktop`](https://docs.deno.com/runtime/desktop/)
@@ -45,14 +46,24 @@ tokens by hand onto a phone.
   bundle.
 - **Android**: [denoapk](https://github.com/sigmaSd/denoapk) packages the
   same `web/` into an APK — a WebView shell, no Deno runtime on-device.
+  QR import uses Android's native `BarcodeDetector`; the desktop app keeps
+  the share-to-phone direction but does not expose QR scanning.
 - **CI**: `.github/workflows/build.yml` builds all six `deno desktop`
   targets plus the APK on every commit to `main`.
 
 ## Run from source
 
 ```
-deno task bundle && deno desktop --allow-net --allow-env --allow-read --allow-sys report.ts
+deno task bundle && deno desktop --allow-net --allow-read --allow-sys report.ts
 ```
 
-`CLAUDE_ORG_ID` / `OPENCODE_WORKSPACE_ID` env vars override auto-detection
-if you ever need them.
+For day-to-day development:
+
+```
+deno task dev            # desktop: bundles web/, serves report.ts (page at http://localhost:8000)
+deno task dev:android    # Android: bundles, rebuilds the APK, installs + launches it, streams logcat
+```
+
+`dev:android` picks the connected device (`--device <serial>` or
+`$ANDROID_SERIAL` to choose when several are attached); pass `--no-logs` to
+skip the log stream.

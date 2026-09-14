@@ -5,10 +5,10 @@
   "exports": "./report.ts",
   "imports": {
     "@std/assert": "jsr:@std/assert@1.0.19",
-    "@std/media-types": "jsr:@std/media-types@1",
-    "@std/path": "jsr:@std/path@1",
-    "@sigmasd/denoapk/handler": "jsr:@sigmasd/denoapk/handler",
-    "qrcode-generator": "npm:qrcode-generator@1"
+    "@std/media-types": "jsr:@std/media-types@^1.1.0",
+    "@std/path": "jsr:@std/path@^1.1.6",
+    "@sigmasd/denoapk/handler": "jsr:@sigmasd/denoapk@0.5.1/handler",
+    "qrcode-generator": "npm:qrcode-generator@^2.0.4"
   },
   "exclude": [
     ".flatpak-builder",

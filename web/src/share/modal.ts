@@ -25,11 +25,14 @@ function currentPayload(): api.TokenRequest {
   const body: api.TokenRequest = {};
   const claude = store.getClaudeToken();
   if (claude) body.claudeToken = claude;
-  const s0 = store.getChatGPTSession0();
-  const s1 = store.getChatGPTSession1();
-  if (s0 && s1) {
-    body.chatgptSession0 = s0;
-    body.chatgptSession1 = s1;
+  const session = store.getChatGPTSession();
+  if (session) {
+    if (session.kind === "single") {
+      body.chatgptSessionToken = session.token;
+    } else {
+      body.chatgptSession0 = session.token0;
+      body.chatgptSession1 = session.token1;
+    }
   }
   const oc = store.getOpenCodeToken();
   if (oc) {

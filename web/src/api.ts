@@ -21,6 +21,9 @@ export interface StatusResponse {
 
 export interface TokenRequest {
   claudeToken?: string;
+  /** Current single-cookie form: value of `__Secure-next-auth.session-token`. */
+  chatgptSessionToken?: string;
+  /** Legacy chunked form: values of `...session-token.0` / `.1`. */
   chatgptSession0?: string;
   chatgptSession1?: string;
   opencodeToken?: string;
@@ -47,6 +50,7 @@ export function getUsage(): poll.UsageSnapshot {
 
 export function setTokens(body: TokenRequest): TokenResponse {
   let claudeTok = body.claudeToken?.trim();
+  let chatgptSessionToken = body.chatgptSessionToken?.trim();
   let chatgptSession0 = body.chatgptSession0?.trim();
   let chatgptSession1 = body.chatgptSession1?.trim();
   let opencodeTok = body.opencodeToken?.trim();
@@ -56,6 +60,10 @@ export function setTokens(body: TokenRequest): TokenResponse {
   if (claudeTok && claudeTok.startsWith("sessionKey=")) {
     claudeTok = claudeTok.slice(11);
   }
+  chatgptSessionToken = chatgptSessionToken?.replace(
+    /^__Secure-next-auth\.session-token=/,
+    "",
+  ).replace(/;$/, "");
   chatgptSession0 = chatgptSession0?.replace(
     /^__Secure-next-auth\.session-token\.0=/,
     "",
@@ -74,14 +82,21 @@ export function setTokens(body: TokenRequest): TokenResponse {
     };
   }
 
-  if (!claudeTok && !chatgptSession0 && !chatgptSession1 && !opencodeTok) {
+  if (
+    !claudeTok && !chatgptSessionToken && !chatgptSession0 &&
+    !chatgptSession1 &&
+    !opencodeTok
+  ) {
     return { ok: false, error: "Paste at least one provider token." };
   }
 
-  if (!!chatgptSession0 !== !!chatgptSession1) {
+  if (
+    !chatgptSessionToken && (!!chatgptSession0 !== !!chatgptSession1)
+  ) {
     return {
       ok: false,
-      error: "Both ChatGPT session cookie parts are required.",
+      error:
+        "Paste the ChatGPT session cookie value (__Secure-next-auth.session-token).",
     };
   }
 
@@ -90,8 +105,11 @@ export function setTokens(body: TokenRequest): TokenResponse {
     store.clearClaudeOrg();
     poll.clearClaudeState();
   }
-  if (chatgptSession0 && chatgptSession1) {
-    store.setChatGPTSession(chatgptSession0, chatgptSession1);
+  if (chatgptSessionToken) {
+    store.setChatGPTSessionSingle(chatgptSessionToken);
+    poll.clearChatGPTState();
+  } else if (chatgptSession0 && chatgptSession1) {
+    store.setChatGPTSessionSplit(chatgptSession0, chatgptSession1);
     poll.clearChatGPTState();
   }
   if (opencodeTok) {

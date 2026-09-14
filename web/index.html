@@ -812,18 +812,15 @@
 
         <div class="provider-field">
           <div class="provider-field-head">
-            <label for="chatgpt-session-0-input">ChatGPT session cookies</label>
+            <label for="chatgpt-session-input">ChatGPT session cookie</label>
             <span class="connected-badge"
               id="chatgpt-connected-badge">✓ connected</span>
           </div>
-          <input id="chatgpt-session-0-input" type="password"
-            placeholder="__Secure-next-auth.session-token.0" autocomplete="off"
+          <input id="chatgpt-session-input" type="password"
+            placeholder="__Secure-next-auth.session-token" autocomplete="off"
             spellcheck="false" />
-          <input id="chatgpt-session-1-input" type="password"
-            placeholder="__Secure-next-auth.session-token.1" autocomplete="off"
-            spellcheck="false" style="margin-top:6px" />
           <div
-            class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy the values of <b>session-token.0</b> and <b>session-token.1</b></div>
+            class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy the value of <b>__Secure-next-auth.session-token</b></div>
           <button class="provider-connect"
             id="chatgpt-connect">Connect ChatGPT</button>
           <div class="provider-error-msg" id="chatgpt-key-error"></div>
@@ -856,7 +853,7 @@
         <a class="back-to-dash" id="back-to-dash">← back to dashboard</a>
         <div class="key-help">
         Stored locally on this machine. Only used to poll your own usage.<br>
-        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> two session-token cookies &nbsp;|&nbsp; <b>OpenCode:</b> auth
+        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> session-token cookie &nbsp;|&nbsp; <b>OpenCode:</b> auth
       </div>
       </div>
     </div>

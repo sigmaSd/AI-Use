@@ -524,13 +524,11 @@ function updateKeyScreenState() {
     byId("claude-connected-badge").style.display = "none";
   }
   if (hasChatGPT) {
-    byId("chatgpt-session-0-input").style.display = "none";
-    byId("chatgpt-session-1-input").style.display = "none";
+    byId("chatgpt-session-input").style.display = "none";
     byId("chatgpt-connect").style.display = "none";
     byId("chatgpt-connected-badge").style.display = "inline";
   } else {
-    byId("chatgpt-session-0-input").style.display = "";
-    byId("chatgpt-session-1-input").style.display = "";
+    byId("chatgpt-session-input").style.display = "";
     byId("chatgpt-connect").style.display = "";
     byId("chatgpt-connected-badge").style.display = "none";
   }
@@ -558,15 +556,21 @@ function showKeyScreenWithState() {
 
 function connectProvider(
   claudeToken,
-  chatgptSession0,
+  chatgptSession,
   chatgptSession1,
   opencodeToken,
   opencodeWorkspaceId,
 ) {
   var body = {};
   if (claudeToken) body.claudeToken = claudeToken;
-  if (chatgptSession0) body.chatgptSession0 = chatgptSession0;
-  if (chatgptSession1) body.chatgptSession1 = chatgptSession1;
+  // Legacy callers passed (session0, session1) for the chunked cookies;
+  // the current UI passes a single session-token value as `chatgptSession`.
+  if (chatgptSession && chatgptSession1) {
+    body.chatgptSession0 = chatgptSession;
+    body.chatgptSession1 = chatgptSession1;
+  } else if (chatgptSession) {
+    body.chatgptSessionToken = chatgptSession;
+  }
   if (opencodeToken) body.opencodeToken = opencodeToken;
   if (opencodeWorkspaceId) body.opencodeWorkspaceId = opencodeWorkspaceId;
 
@@ -602,20 +606,18 @@ byId("claude-connect").addEventListener("click", function () {
 
 // ChatGPT connect button
 byId("chatgpt-connect").addEventListener("click", function () {
-  var session0 = byId("chatgpt-session-0-input").value.trim();
-  var session1 = byId("chatgpt-session-1-input").value.trim();
-  if (!session0 || !session1) {
-    byId("chatgpt-key-error").textContent = "Paste both session cookie parts.";
+  var session = byId("chatgpt-session-input").value.trim();
+  if (!session) {
+    byId("chatgpt-key-error").textContent = "Paste the session cookie value.";
     return;
   }
   byId("chatgpt-connect").disabled = true;
   byId("chatgpt-key-error").textContent = "";
-  connectProvider(undefined, session0, session1, undefined, undefined).then(
+  connectProvider(undefined, session, undefined, undefined, undefined).then(
     function (res) {
       byId("chatgpt-connect").disabled = false;
       if (res.ok) {
-        byId("chatgpt-session-0-input").value = "";
-        byId("chatgpt-session-1-input").value = "";
+        byId("chatgpt-session-input").value = "";
         checkStatusAndShow();
       } else {
         byId("chatgpt-key-error").textContent = res.error ||
@@ -667,10 +669,7 @@ byId("opencode-connect").addEventListener("click", function () {
 byId("claude-key-input").addEventListener("keydown", function (e) {
   if (e.key === "Enter") byId("claude-connect").click();
 });
-byId("chatgpt-session-0-input").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") byId("chatgpt-connect").click();
-});
-byId("chatgpt-session-1-input").addEventListener("keydown", function (e) {
+byId("chatgpt-session-input").addEventListener("keydown", function (e) {
   if (e.key === "Enter") byId("chatgpt-connect").click();
 });
 byId("opencode-key-input").addEventListener("keydown", function (e) {

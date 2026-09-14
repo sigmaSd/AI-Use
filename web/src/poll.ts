@@ -21,8 +21,7 @@ import {
   type PrepaidCredits,
 } from "./providers/claude.ts";
 import {
-  getChatGPTSession0,
-  getChatGPTSession1,
+  getChatGPTSession,
   getClaudeToken,
   getOpenCodeToken,
   hasChatGPTSession,
@@ -125,8 +124,7 @@ async function pollOnce() {
 
   try {
     const claudeToken = getClaudeToken();
-    const chatgptSession0 = getChatGPTSession0();
-    const chatgptSession1 = getChatGPTSession1();
+    const chatgptSession = getChatGPTSession();
     const opencodeToken = getOpenCodeToken();
     const now = Date.now();
 
@@ -137,13 +135,10 @@ async function pollOnce() {
     let hadAnySuccess = false;
     let attemptedAnyProvider = false;
 
-    if (chatgptSession0 && chatgptSession1 && now >= nextChatGPTPollAt) {
+    if (chatgptSession && now >= nextChatGPTPollAt) {
       attemptedAnyProvider = true;
       try {
-        latestChatGPTUsage = await chatgptClient.fetchUsage(
-          chatgptSession0,
-          chatgptSession1,
-        );
+        latestChatGPTUsage = await chatgptClient.fetchUsage(chatgptSession);
         authErrorCountChatGPT = 0;
         chatgptError = null;
         nextChatGPTPollAt = Date.now() + POLL_INTERVAL_MS;

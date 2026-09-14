@@ -43,6 +43,33 @@ export class ChatGPTAuthError extends Error {
   }
 }
 
+/**
+ * ChatGPT session cookies.
+ *
+ * ChatGPT used to chunk `__Secure-next-auth.session-token` into `.0`/`.1`
+ * parts once the value grew past the per-cookie size limit; recent captures
+ * show a single un-chunked `__Secure-next-auth.session-token` cookie instead.
+ * Both shapes are accepted — new connects store the single form, old split
+ * installs keep working until their cookies rotate.
+ */
+export type ChatGPTSession =
+  | { kind: "single"; token: string }
+  | { kind: "split"; token0: string; token1: string };
+
+export function sessionCookieHeader(session: ChatGPTSession): string {
+  if (session.kind === "single") {
+    return `__Secure-next-auth.session-token=${session.token}`;
+  }
+  return `__Secure-next-auth.session-token.0=${session.token0}; ` +
+    `__Secure-next-auth.session-token.1=${session.token1}`;
+}
+
+export function sessionCacheKey(session: ChatGPTSession): string {
+  return session.kind === "single"
+    ? `single\u0000${session.token}`
+    : `split\u0000${session.token0}\u0000${session.token1}`;
+}
+
 interface CachedAccessToken {
   sessionKey: string;
   value: string;
@@ -56,8 +83,8 @@ export interface ChatGPTClientOptions {
   userAgent?: string;
 }
 
-function sessionKey(session0: string, session1: string): string {
-  return `${session0}\u0000${session1}`;
+function sessionKey(session: ChatGPTSession): string {
+  return sessionCacheKey(session);
 }
 
 function decodeJwtExpiry(token: string): number | null {
@@ -107,12 +134,10 @@ export class ChatGPTClient {
   }
 
   private async requestAccessToken(
-    session0: string,
-    session1: string,
+    session: ChatGPTSession,
     key: string,
   ): Promise<string> {
-    const cookie = `__Secure-next-auth.session-token.0=${session0}; ` +
-      `__Secure-next-auth.session-token.1=${session1}`;
+    const cookie = sessionCookieHeader(session);
     const res = await this.fetchFn(SESSION_URL, {
       headers: {
         "Accept": "application/json",
@@ -146,11 +171,10 @@ export class ChatGPTClient {
   }
 
   private async resolveAccessToken(
-    session0: string,
-    session1: string,
+    session: ChatGPTSession,
     forceRefresh = false,
   ): Promise<string> {
-    const key = sessionKey(session0, session1);
+    const key = sessionKey(session);
     if (!forceRefresh) {
       const cached = this.getCachedAccessToken(key);
       if (cached) return cached;
@@ -160,7 +184,7 @@ export class ChatGPTClient {
     // reconnect happen at the same time.
     if (this.refreshPromise) return await this.refreshPromise;
 
-    const refresh = this.requestAccessToken(session0, session1, key);
+    const refresh = this.requestAccessToken(session, key);
     this.refreshPromise = refresh;
     try {
       return await refresh;
@@ -183,17 +207,16 @@ export class ChatGPTClient {
   }
 
   async fetchUsage(
-    session0: string,
-    session1: string,
+    session: ChatGPTSession,
   ): Promise<ChatGPTUsageResponse> {
-    let accessToken = await this.resolveAccessToken(session0, session1);
+    let accessToken = await this.resolveAccessToken(session);
     let res = await this.requestUsage(accessToken);
 
     if (res.status === 401 || res.status === 403) {
       // The access token may have been revoked independently of the browser
       // cookies. Refresh once before surfacing an authentication failure.
       this.clearAccessToken();
-      accessToken = await this.resolveAccessToken(session0, session1, true);
+      accessToken = await this.resolveAccessToken(session, true);
       res = await this.requestUsage(accessToken);
     }
 

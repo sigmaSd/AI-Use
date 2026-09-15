@@ -17,14 +17,18 @@
  */
 
 import type { ChatGPTSession } from "./providers/chatgpt.ts";
+import {
+  CHATGPT_SESSION_0_KEY,
+  CHATGPT_SESSION_1_KEY,
+  CHATGPT_SESSION_KEY,
+  CLAUDE_TOKEN_KEY,
+  OPENCODE_TOKEN_KEY,
+  OPENCODE_WORKSPACE_KEY,
+} from "../shared/tokens.ts";
 
-const CLAUDE_TOKEN_KEY = "claude_session_key";
+// Page-only cache for the auto-detected Claude org id: never mirrored to
+// the host (it re-resolves on next launch), so it stays out of shared/.
 const CLAUDE_ORG_KEY = "claude_org_id";
-const CHATGPT_SESSION_KEY = "chatgpt_session_token";
-const CHATGPT_SESSION_0_KEY = "chatgpt_session_token_0";
-const CHATGPT_SESSION_1_KEY = "chatgpt_session_token_1";
-const OPENCODE_TOKEN_KEY = "opencode_auth";
-const OPENCODE_WORKSPACE_KEY = "opencode_workspace_id";
 
 export function getClaudeToken(): string | null {
   return localStorage.getItem(CLAUDE_TOKEN_KEY);

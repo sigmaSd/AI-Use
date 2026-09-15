@@ -23,7 +23,7 @@
       "build-commands": [
         "mkdir -p deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu && (tar -xzf laufey-webview-x86_64-unknown-linux-gnu.tar.gz -C deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu 2>/dev/null || true) && printf 'v0.5.0\\n' > deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu/.downloaded",
         "mkdir -p deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu && (tar -xzf laufey-webview-aarch64-unknown-linux-gnu.tar.gz -C deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu 2>/dev/null || true) && printf 'v0.5.0\\n' > deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu/.downloaded",
-        "./deno desktop --cached-only --vendor --allow-net --output aiuse report.ts",
+        "./deno desktop --cached-only --vendor --allow-net --output aiuse src/main.ts",
         "install -Dm755 aiuse/aiuse /app/lib/aiuse/aiuse",
         "install -Dm644 aiuse/aiuse.so /app/lib/aiuse/aiuse.so",
         "mkdir -p /app/bin && ln -s ../lib/aiuse/aiuse /app/bin/aiuse",

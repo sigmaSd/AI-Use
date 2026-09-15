@@ -2,7 +2,7 @@
   "name": "aiuse",
   "version": "0.4.0",
   "license": "MIT",
-  "exports": "./report.ts",
+  "exports": "./src/main.ts",
   "imports": {
     "@std/assert": "jsr:@std/assert@1.0.19",
     "@std/media-types": "jsr:@std/media-types@^1.1.0",
@@ -14,25 +14,21 @@
     ".flatpak-builder",
     "build",
     "dist",
-    "web/dist"
+    "src/web/dist"
   ],
-  "lint": {
-    "exclude": [
-      "web/src/main.js"
-    ]
-  },
   "tasks": {
-    "bundle": "deno bundle --platform browser web/src/main.js -o web/dist/app.js",
+    "bundle": "deno bundle --platform browser src/web/main.ts -o src/web/dist/app.js",
+    "test": "deno test --allow-net --allow-read --allow-sys src/",
     "dev": {
-      "command": "deno run --allow-net --allow-read --allow-sys report.ts",
+      "command": "deno run --allow-net --allow-read --allow-sys src/main.ts",
       "dependencies": ["bundle"]
     },
     "dev:android": {
       "command": "deno run -A scripts/dev-android.ts",
       "dependencies": ["bundle"]
     },
-    "compile": "deno task bundle && deno desktop --allow-net --allow-read --allow-sys --exclude-unused-npm --include ./web/index.html --include ./web/dist --output ./dist/aiuse report.ts",
-    "package:rpm": "deno task bundle && deno desktop --allow-net --allow-read --allow-sys --exclude-unused-npm --include ./web/index.html --include ./web/dist --output ./dist/aiuse.rpm report.ts"
+    "compile": "deno task bundle && deno desktop --allow-net --allow-read --allow-sys --exclude-unused-npm --include ./src/web/index.html --include ./src/web/dist --output ./dist/aiuse src/main.ts",
+    "package:rpm": "deno task bundle && deno desktop --allow-net --allow-read --allow-sys --exclude-unused-npm --include ./src/web/index.html --include ./src/web/dist --output ./dist/aiuse.rpm src/main.ts"
   },
   "desktop": {
     "app": {

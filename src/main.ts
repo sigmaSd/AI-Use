@@ -18,7 +18,7 @@
  *
  * The pairing routes back the "share to phone" feature — see host/pairing.ts
  * for why a second Deno.serve() call is what makes it reachable from a phone
- * at all, and web/src/share/ for the client side.
+ * at all, and src/web/share/ for the client side.
  *
  * - Session tokens are entered once in the UI and persist in the Deno
  *   process's localStorage (see host/tokens.ts), mirrored from the page's
@@ -28,7 +28,7 @@
  * - Organization / workspace IDs are auto-detected.
  *
  * Run:
- *   deno task bundle && deno desktop --allow-net --allow-read --allow-sys report.ts
+ *   deno task bundle && deno desktop --allow-net --allow-read --allow-sys src/main.ts
  */
 
 import { contentType } from "@std/media-types/content-type";

@@ -11,6 +11,7 @@
 
 import * as store from "./store.ts";
 import * as poll from "./poll.ts";
+import type { TokenFields } from "../shared/tokens.ts";
 import {
   deleteBackendTokens,
   loadBackendTokens,
@@ -24,16 +25,8 @@ export interface StatusResponse {
   lastFetchedAt: string | null;
 }
 
-export interface TokenRequest {
-  claudeToken?: string;
-  /** Current single-cookie form: value of `__Secure-next-auth.session-token`. */
-  chatgptSessionToken?: string;
-  /** Legacy chunked form: values of `...session-token.0` / `.1`. */
-  chatgptSession0?: string;
-  chatgptSession1?: string;
-  opencodeToken?: string;
-  opencodeWorkspaceId?: string;
-}
+/** Token payload accepted from the UI and the phone-share QR. */
+export type TokenRequest = TokenFields;
 
 export interface TokenResponse {
   ok: boolean;

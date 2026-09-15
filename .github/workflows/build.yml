@@ -52,9 +52,9 @@ jobs:
           deno desktop --target=${{ matrix.target }}
           --allow-net --allow-read --allow-sys
           --exclude-unused-npm
-          --include ./web/index.html --include ./web/dist
+          --include ./src/web/index.html --include ./src/web/dist
           --output ./dist/aiuse
-          report.ts
+          src/main.ts
       - name: Archive
         run: |
           cd dist
@@ -79,7 +79,8 @@ jobs:
       # --min-dep-age 0: this is our own package, published by this same
       # org's CI moments before this job can run -- the supply-chain risk
       # the default 24h policy guards against doesn't apply to ourselves.
-      - run: deno run -A --min-dep-age 0 jsr:@sigmasd/denoapk build .
+      - run: deno task bundle
+      - run: deno run -A --min-dep-age 0 jsr:@sigmasd/denoapk@0.6.0 build . --web-dir src/web
       - uses: actions/upload-artifact@v4
         with:
           name: aiuse-android

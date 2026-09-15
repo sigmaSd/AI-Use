@@ -6,15 +6,35 @@
  * which exposes the same request/response shapes as plain function calls.
  * Everything below is DOM rendering and is untouched.
  *
- * It is still the original ES5-style code, which never saw the linter while it
- * lived inside a template literal, so deno.json excludes this file from lint
- * (110 no-var hits). Modernising it is a follow-up — keeping the move
- * behaviour-identical matters more than style while the Android port lands.
+ * Ported to TypeScript (typed DOM access, provider response types); the
+ * rendering logic itself is unchanged from the ES5 original.
  */
 
 import * as api from "./api.ts";
-import { scanForTokens, shareConnections } from "./share/modal.ts";
+import type { TokenResponse } from "./api.ts";
 import { isDesktop } from "./platform.ts";
+import type { ProviderError } from "./poll.ts";
+import type {
+  ClaudeUsageResponse,
+  ExtraUsage,
+  PrepaidCredits,
+} from "./providers/claude.ts";
+import type {
+  ChatGPTRateLimit,
+  ChatGPTUsageResponse,
+  ChatGPTUsageWindow,
+} from "./providers/chatgpt.ts";
+import type { OCUsageResponse, OCUsageWindow } from "./providers/opencode.ts";
+import { scanForTokens, shareConnections } from "./share/modal.ts";
+import {
+  colorVar,
+  fmtAgo,
+  fmtCountdownReal,
+  fmtMinor,
+  fmtTime,
+  fmtWindow,
+  statusWord,
+} from "./ui/format.ts";
 
 api.init();
 
@@ -22,102 +42,62 @@ document.addEventListener("contextmenu", function (e) {
   e.preventDefault();
 });
 
-function byId(id) {
-  return document.getElementById(id);
+function byId<T extends HTMLElement = HTMLElement>(id: string): T {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`missing element #${id}`);
+  return el as T;
 }
 
-function showScreen(name) {
+function inputById(id: string): HTMLInputElement {
+  return byId<HTMLInputElement>(id);
+}
+
+function buttonById(id: string): HTMLButtonElement {
+  return byId<HTMLButtonElement>(id);
+}
+
+function showScreen(name: string): void {
   byId("key-screen").style.display = (name === "key") ? "flex" : "none";
   byId("dashboard").style.display = (name === "dashboard") ? "block" : "none";
 }
 
-function colorVar(pct) {
-  if (pct >= 90) return "var(--red)";
-  if (pct >= 60) return "var(--amber)";
-  return "var(--green)";
-}
-function statusWord(pct) {
-  if (pct >= 90) return "critical";
-  if (pct >= 60) return "elevated";
-  return "normal";
-}
-
-function buildMeter(elId, pct) {
-  var el = byId(elId);
-  var totalCells = 20;
-  var onCells = Math.round((pct / 100) * totalCells);
-  var color = colorVar(pct);
+function buildMeter(elId: string, pct: number): void {
+  const el = byId(elId);
+  const totalCells = 20;
+  const onCells = Math.round((pct / 100) * totalCells);
+  const color = colorVar(pct);
   el.innerHTML = "";
-  for (var i = 0; i < totalCells; i++) {
-    var c = document.createElement("div");
+  for (let i = 0; i < totalCells; i++) {
+    const c = document.createElement("div");
     c.className = "cell";
     if (i < onCells) c.style.background = color;
     el.appendChild(c);
   }
 }
 
-function applyStatus(elId, pct) {
-  var badge = byId(elId);
-  var color = colorVar(pct);
+function applyStatus(elId: string, pct: number): void {
+  const badge = byId(elId);
+  const color = colorVar(pct);
   badge.textContent = statusWord(pct);
   badge.style.color = color;
   badge.style.borderColor = color;
 }
 
-function fmtTime(iso) {
-  var d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function fmtCountdownReal(ms) {
-  if (ms <= 0) return "now";
-  var totalSec = Math.floor(ms / 1000);
-  var d = Math.floor(totalSec / 86400);
-  var h = Math.floor((totalSec % 86400) / 3600);
-  var m = Math.floor((totalSec % 3600) / 60);
-  var s = totalSec % 60;
-  if (d > 0) return d + "d " + h + "h " + m + "m";
-  if (h > 0) return h + "h " + m + "m " + s + "s";
-  if (m > 0) return m + "m " + s + "s";
-  return s + "s";
-}
-
-function fmtAgo(iso) {
-  if (!iso) return "--";
-  var sec = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
-  );
-  var d = Math.floor(sec / 86400);
-  var h = Math.floor((sec % 86400) / 3600);
-  var m = Math.floor((sec % 3600) / 60);
-  if (d > 0) return "updated " + d + "d " + h + "h ago";
-  if (h > 0) return "updated " + h + "h " + m + "m ago";
-  if (m > 0) return "updated " + m + "m ago";
-  return "updated " + sec + "s ago";
-}
-
 // Resets store the absolute reset time (ISO string) for countdown calculation.
 // For OpenCode we only get resetInSec from the API, so we compute the absolute
 // time at the moment we receive the data.
-var resets = {}; // absolute reset times by provider/window
-var chatgptResetKeys = [];
-var lastFetchedAt = null;
-var usageRequestSequence = 0;
-var latestAppliedUsageRequest = 0;
-var latestAppliedUsageRevision = -1;
-var pollHandle = null;
+const resets: Record<string, string | null> = {}; // absolute reset times by provider/window
+let chatgptResetKeys: string[] = [];
+let lastFetchedAt: string | null = null;
+let usageRequestSequence = 0;
+let latestAppliedUsageRequest = 0;
+let latestAppliedUsageRevision = -1;
+let pollHandle: ReturnType<typeof setInterval> | null = null;
 
 // ---- provider visibility ----
-var hasClaude = false;
-var hasChatGPT = false;
-var hasOpenCode = false;
+let hasClaude = false;
+let hasChatGPT = false;
+let hasOpenCode = false;
 
 function updateProviderSections() {
   byId("claude-section").style.display = hasClaude ? "" : "none";
@@ -129,21 +109,21 @@ function updateProviderSections() {
 }
 
 // ---- error rendering ----
-function renderProviderError(prefix, error) {
+function renderProviderError(prefix: string, error: ProviderError): void {
   if (!error) return;
-  var el = byId(prefix + "-error");
+  const el = byId(prefix + "-error");
   byId(prefix + "-error-kind").textContent = error.kind === "auth"
     ? "possible auth issue"
     : "network error";
   byId(prefix + "-error-msg").textContent = error.message || "";
   el.style.display = "flex";
-  var badge = byId(prefix + "-badge");
+  const badge = byId(prefix + "-badge");
   badge.textContent = "error";
   badge.className = "provider-badge err";
 }
-function clearProviderError(prefix) {
+function clearProviderError(prefix: string): void {
   byId(prefix + "-error").style.display = "none";
-  var badge = byId(prefix + "-badge");
+  const badge = byId(prefix + "-badge");
   badge.textContent = "connected";
   badge.className = "provider-badge ok";
 }
@@ -160,7 +140,11 @@ byId("opencode-error-dismiss").addEventListener("click", function () {
 });
 
 // ---- Claude rendering ----
-function renderClaudeUsage(usage, prepaidCredits, error) {
+function renderClaudeUsage(
+  usage: ClaudeUsageResponse | null,
+  prepaidCredits: PrepaidCredits | null,
+  error: ProviderError | null,
+): void {
   if (error) {
     renderProviderError("claude", error);
     return;
@@ -168,11 +152,11 @@ function renderClaudeUsage(usage, prepaidCredits, error) {
   clearProviderError("claude");
   if (!usage) return;
 
-  var fh = usage.five_hour;
-  var sd = usage.seven_day;
+  const fh = usage.five_hour;
+  const sd = usage.seven_day;
 
-  byId("pct-5h").textContent = Math.round(fh.utilization);
-  byId("pct-7d").textContent = Math.round(sd.utilization);
+  byId("pct-5h").textContent = String(Math.round(fh.utilization));
+  byId("pct-7d").textContent = String(Math.round(sd.utilization));
   buildMeter("meter-5h", fh.utilization);
   buildMeter("meter-7d", sd.utilization);
   applyStatus("status-5h", fh.utilization);
@@ -183,7 +167,7 @@ function renderClaudeUsage(usage, prepaidCredits, error) {
   resets.fiveHour = fh.resets_at;
   resets.sevenDay = sd.resets_at;
 
-  var spendRow5h = byId("spend-5h-row");
+  const spendRow5h = byId("spend-5h-row");
   if (fh.used_dollars != null && fh.limit_dollars != null) {
     spendRow5h.style.display = "flex";
     byId("spend-5h").textContent = "$" + fh.used_dollars.toFixed(2) + " of $" +
@@ -191,7 +175,7 @@ function renderClaudeUsage(usage, prepaidCredits, error) {
   } else {
     spendRow5h.style.display = "none";
   }
-  var spendRow7d = byId("spend-7d-row");
+  const spendRow7d = byId("spend-7d-row");
   if (sd.used_dollars != null && sd.limit_dollars != null) {
     spendRow7d.style.display = "flex";
     byId("spend-7d").textContent = "$" + sd.used_dollars.toFixed(2) + " of $" +
@@ -200,7 +184,7 @@ function renderClaudeUsage(usage, prepaidCredits, error) {
     spendRow7d.style.display = "none";
   }
 
-  var spendEnabled = (usage.extra_usage && usage.extra_usage.is_enabled) ||
+  const spendEnabled = (usage.extra_usage && usage.extra_usage.is_enabled) ||
     (usage.spend && usage.spend.enabled);
   byId("spend-tag").textContent = spendEnabled ? "enabled" : "disabled";
 
@@ -208,19 +192,11 @@ function renderClaudeUsage(usage, prepaidCredits, error) {
   renderScopedLimits(usage);
 }
 
-function fmtMinor(amountMinor, decimalPlaces, currency) {
-  var places = decimalPlaces == null ? 2 : decimalPlaces;
-  var symbol = currency === "USD" ? "$" : (currency || "") + " ";
-  return symbol + (Number(amountMinor) / Math.pow(10, places)).toFixed(places);
-}
-function fmtMoney(amount, decimalPlaces, currency) {
-  var symbol = currency === "USD" ? "$" : (currency || "") + " ";
-  return symbol +
-    Number(amount).toFixed(decimalPlaces == null ? 2 : decimalPlaces);
-}
-
-function renderExtraCredits(extraUsage, prepaidCredits) {
-  var row = byId("credits-row");
+function renderExtraCredits(
+  extraUsage: ExtraUsage | null | undefined,
+  prepaidCredits: PrepaidCredits | null,
+): void {
+  const row = byId("credits-row");
   if (
     !extraUsage || !extraUsage.is_enabled || extraUsage.used_credits == null
   ) {
@@ -228,7 +204,7 @@ function renderExtraCredits(extraUsage, prepaidCredits) {
     return;
   }
   row.style.display = "flex";
-  var text = fmtMinor(
+  let text = fmtMinor(
     extraUsage.used_credits,
     extraUsage.decimal_places,
     extraUsage.currency,
@@ -248,11 +224,11 @@ function renderExtraCredits(extraUsage, prepaidCredits) {
   byId("credits-used").textContent = text;
 }
 
-function renderScopedLimits(usage) {
-  var panel = byId("scoped-panel");
-  var container = byId("scoped-limits");
-  var all = usage.limits || [];
-  var scoped = all.filter(function (l) {
+function renderScopedLimits(usage: ClaudeUsageResponse): void {
+  const panel = byId("scoped-panel");
+  const container = byId("scoped-limits");
+  const all = usage.limits || [];
+  const scoped = all.filter(function (l) {
     return l.kind === "weekly_scoped" && l.scope && l.scope.model &&
       l.scope.model.display_name;
   });
@@ -266,21 +242,22 @@ function renderScopedLimits(usage) {
   container.innerHTML = "";
 
   scoped.forEach(function (l) {
-    var name = l.scope.model.display_name;
-    var pct = l.percent || 0;
-    var active = l.is_active;
-    var color = active ? colorVar(pct) : "var(--dim)";
-    var label = active ? statusWord(pct) : "inactive";
+    if (!l.scope?.model) return;
+    const name = l.scope.model.display_name;
+    const pct = l.percent || 0;
+    const active = l.is_active;
+    const color = active ? colorVar(pct) : "var(--dim)";
+    const label = active ? statusWord(pct) : "inactive";
 
-    var row = document.createElement("div");
+    const row = document.createElement("div");
     row.className = "scoped-row";
 
-    var head = document.createElement("div");
+    const head = document.createElement("div");
     head.className = "scoped-head";
-    var nameEl = document.createElement("span");
+    const nameEl = document.createElement("span");
     nameEl.className = "scoped-name";
     nameEl.textContent = name;
-    var badge = document.createElement("span");
+    const badge = document.createElement("span");
     badge.className = "status";
     badge.textContent = label;
     badge.style.color = color;
@@ -288,16 +265,16 @@ function renderScopedLimits(usage) {
     head.appendChild(nameEl);
     head.appendChild(badge);
 
-    var pctEl = document.createElement("div");
+    const pctEl = document.createElement("div");
     pctEl.className = "scoped-pct";
     pctEl.textContent = Math.round(pct) + "%";
 
-    var meterEl = document.createElement("div");
+    const meterEl = document.createElement("div");
     meterEl.className = "meter";
-    var totalCells = 20;
-    var onCells = Math.round((pct / 100) * totalCells);
-    for (var i = 0; i < totalCells; i++) {
-      var c = document.createElement("div");
+    const totalCells = 20;
+    const onCells = Math.round((pct / 100) * totalCells);
+    for (let i = 0; i < totalCells; i++) {
+      const c = document.createElement("div");
       c.className = "cell";
       if (i < onCells) c.style.background = color;
       meterEl.appendChild(c);
@@ -311,15 +288,7 @@ function renderScopedLimits(usage) {
 }
 
 // ---- ChatGPT rendering ----
-function fmtWindow(seconds) {
-  if (!seconds) return "usage window";
-  if (seconds % 604800 === 0) return (seconds / 604800) + "-week window";
-  if (seconds % 86400 === 0) return (seconds / 86400) + "-day window";
-  if (seconds % 3600 === 0) return (seconds / 3600) + "-hour window";
-  return fmtCountdownReal(seconds * 1000) + " window";
-}
-
-function chatgptResetAt(win) {
+function chatgptResetAt(win: ChatGPTUsageWindow): string | null {
   if (win.reset_at != null) return new Date(win.reset_at * 1000).toISOString();
   if (win.reset_after_seconds != null) {
     return new Date(Date.now() + win.reset_after_seconds * 1000).toISOString();
@@ -327,48 +296,53 @@ function chatgptResetAt(win) {
   return null;
 }
 
-function appendChatGPTWindow(container, name, win, tag) {
+function appendChatGPTWindow(
+  container: HTMLElement,
+  name: string,
+  win: ChatGPTUsageWindow | null | undefined,
+  tag: string,
+): void {
   if (!win) return;
-  var key = "chatgpt-" + chatgptResetKeys.length;
-  var pct = Number(win.used_percent || 0);
-  var resetAt = chatgptResetAt(win);
+  const key = "chatgpt-" + chatgptResetKeys.length;
+  const pct = Number(win.used_percent || 0);
+  const resetAt = chatgptResetAt(win);
   resets[key] = resetAt;
   chatgptResetKeys.push(key);
 
-  var panel = document.createElement("div");
+  const panel = document.createElement("div");
   panel.className = "panel";
   panel.setAttribute("data-tag", tag);
 
-  var head = document.createElement("div");
+  const head = document.createElement("div");
   head.className = "row-head";
-  var label = document.createElement("div");
+  const label = document.createElement("div");
   label.className = "label";
   label.textContent = name + " · " + fmtWindow(win.limit_window_seconds);
-  var status = document.createElement("div");
+  const status = document.createElement("div");
   status.className = "status";
   status.id = "status-" + key;
   head.appendChild(label);
   head.appendChild(status);
 
-  var pctEl = document.createElement("div");
+  const pctEl = document.createElement("div");
   pctEl.className = "pct";
-  var pctValue = document.createElement("span");
+  const pctValue = document.createElement("span");
   pctValue.textContent = String(Math.round(pct));
-  var pctUnit = document.createElement("small");
+  const pctUnit = document.createElement("small");
   pctUnit.textContent = "%";
   pctEl.appendChild(pctValue);
   pctEl.appendChild(pctUnit);
 
-  var meter = document.createElement("div");
+  const meter = document.createElement("div");
   meter.className = "meter";
   meter.id = "meter-" + key;
-  var countdown = document.createElement("div");
+  const countdown = document.createElement("div");
   countdown.className = "countdown";
   countdown.appendChild(document.createTextNode("resets in "));
-  var countdownValue = document.createElement("span");
+  const countdownValue = document.createElement("span");
   countdownValue.id = "cd-" + key;
   countdownValue.textContent = resetAt
-    ? fmtCountdownReal(new Date(resetAt) - new Date())
+    ? fmtCountdownReal(new Date(resetAt).getTime() - Date.now())
     : "--";
   countdown.appendChild(countdownValue);
 
@@ -381,13 +355,21 @@ function appendChatGPTWindow(container, name, win, tag) {
   applyStatus(status.id, pct);
 }
 
-function appendChatGPTRateLimit(container, name, limit, tag) {
+function appendChatGPTRateLimit(
+  container: HTMLElement,
+  name: string,
+  limit: ChatGPTRateLimit | null | undefined,
+  tag: string,
+): void {
   if (!limit) return;
   appendChatGPTWindow(container, name, limit.primary_window, tag);
   appendChatGPTWindow(container, name, limit.secondary_window, tag);
 }
 
-function renderChatGPTUsage(data, error) {
+function renderChatGPTUsage(
+  data: ChatGPTUsageResponse | null,
+  error: ProviderError | null,
+): void {
   if (error) {
     renderProviderError("chatgpt", error);
     return;
@@ -399,7 +381,7 @@ function renderChatGPTUsage(data, error) {
     delete resets[key];
   });
   chatgptResetKeys = [];
-  var container = byId("chatgpt-limits");
+  const container = byId("chatgpt-limits");
   container.innerHTML = "";
   appendChatGPTRateLimit(
     container,
@@ -423,15 +405,15 @@ function renderChatGPTUsage(data, error) {
   });
 
   if (container.childNodes.length === 0) {
-    var empty = document.createElement("div");
+    const empty = document.createElement("div");
     empty.className = "no-provider";
     empty.textContent = "No rate-limit windows were reported for this account.";
     container.appendChild(empty);
   }
 
   byId("chatgpt-plan").textContent = data.plan_type || "unknown";
-  var credits = data.credits || {};
-  var creditsText = "none";
+  const credits = data.credits || {};
+  let creditsText = "none";
   if (credits.unlimited) creditsText = "unlimited";
   else if (credits.balance != null) creditsText = String(credits.balance);
   else if (credits.has_credits) creditsText = "available";
@@ -439,19 +421,22 @@ function renderChatGPTUsage(data, error) {
 }
 
 // ---- OpenCode rendering ----
-function renderOCWindow(prefix, win) {
-  var pct = win.usagePercent || 0;
-  byId("pct-" + prefix).textContent = Math.round(pct);
+function renderOCWindow(prefix: string, win: OCUsageWindow): void {
+  const pct = win.usagePercent || 0;
+  byId("pct-" + prefix).textContent = String(Math.round(pct));
   buildMeter("meter-" + prefix, pct);
   applyStatus("status-" + prefix, pct);
 
   // Compute absolute reset time from resetInSec
-  var now = Date.now();
-  var resetsAt = new Date(now + win.resetInSec * 1000).toISOString();
+  const now = Date.now();
+  const resetsAt = new Date(now + win.resetInSec * 1000).toISOString();
   resets[prefix] = resetsAt;
 }
 
-function renderOpenCodeUsage(data, error) {
+function renderOpenCodeUsage(
+  data: OCUsageResponse | null,
+  error: ProviderError | null,
+): void {
   if (error) {
     renderProviderError("opencode", error);
     return;
@@ -468,10 +453,10 @@ function renderOpenCodeUsage(data, error) {
 function fetchUsageOnce() {
   // Reading poll state is synchronous now, so responses can no longer
   // arrive out of order — the revision guard is kept as a cheap no-op.
-  var requestSequence = ++usageRequestSequence;
+  const requestSequence = ++usageRequestSequence;
   try {
-    var body = api.getUsage();
-    var revision = typeof body.revision === "number" ? body.revision : 0;
+    const body = api.getUsage();
+    const revision = typeof body.revision === "number" ? body.revision : 0;
     if (requestSequence < latestAppliedUsageRequest) return;
     if (revision < latestAppliedUsageRevision) return;
     latestAppliedUsageRequest = requestSequence;
@@ -515,32 +500,32 @@ function stopDashboardPolling() {
 function updateKeyScreenState() {
   // Show/hide connected state for each provider
   if (hasClaude) {
-    byId("claude-key-input").style.display = "none";
-    byId("claude-connect").style.display = "none";
+    inputById("claude-key-input").style.display = "none";
+    buttonById("claude-connect").style.display = "none";
     byId("claude-connected-badge").style.display = "inline";
   } else {
-    byId("claude-key-input").style.display = "";
-    byId("claude-connect").style.display = "";
+    inputById("claude-key-input").style.display = "";
+    buttonById("claude-connect").style.display = "";
     byId("claude-connected-badge").style.display = "none";
   }
   if (hasChatGPT) {
-    byId("chatgpt-session-input").style.display = "none";
-    byId("chatgpt-connect").style.display = "none";
+    inputById("chatgpt-session-input").style.display = "none";
+    buttonById("chatgpt-connect").style.display = "none";
     byId("chatgpt-connected-badge").style.display = "inline";
   } else {
-    byId("chatgpt-session-input").style.display = "";
-    byId("chatgpt-connect").style.display = "";
+    inputById("chatgpt-session-input").style.display = "";
+    buttonById("chatgpt-connect").style.display = "";
     byId("chatgpt-connected-badge").style.display = "none";
   }
   if (hasOpenCode) {
-    byId("opencode-key-input").style.display = "none";
-    byId("opencode-workspace-input").style.display = "none";
-    byId("opencode-connect").style.display = "none";
+    inputById("opencode-key-input").style.display = "none";
+    inputById("opencode-workspace-input").style.display = "none";
+    buttonById("opencode-connect").style.display = "none";
     byId("opencode-connected-badge").style.display = "inline";
   } else {
-    byId("opencode-key-input").style.display = "";
-    byId("opencode-workspace-input").style.display = "";
-    byId("opencode-connect").style.display = "";
+    inputById("opencode-key-input").style.display = "";
+    inputById("opencode-workspace-input").style.display = "";
+    buttonById("opencode-connect").style.display = "";
     byId("opencode-connected-badge").style.display = "none";
   }
   // Show "back to dashboard" only if at least one provider is connected
@@ -555,13 +540,13 @@ function showKeyScreenWithState() {
 }
 
 function connectProvider(
-  claudeToken,
-  chatgptSession,
-  chatgptSession1,
-  opencodeToken,
-  opencodeWorkspaceId,
-) {
-  var body = {};
+  claudeToken?: string,
+  chatgptSession?: string,
+  chatgptSession1?: string,
+  opencodeToken?: string,
+  opencodeWorkspaceId?: string,
+): Promise<TokenResponse> {
+  const body: api.TokenRequest = {};
   if (claudeToken) body.claudeToken = claudeToken;
   // Legacy callers passed (session0, session1) for the chunked cookies;
   // the current UI passes a single session-token value as `chatgptSession`.
@@ -578,19 +563,19 @@ function connectProvider(
 }
 
 // Claude connect button
-byId("claude-connect").addEventListener("click", function () {
-  var token = byId("claude-key-input").value.trim();
+buttonById("claude-connect").addEventListener("click", function () {
+  const token = inputById("claude-key-input").value.trim();
   if (!token) {
     byId("claude-key-error").textContent = "Paste a session key first.";
     return;
   }
-  byId("claude-connect").disabled = true;
+  buttonById("claude-connect").disabled = true;
   byId("claude-key-error").textContent = "";
   connectProvider(token, undefined, undefined, undefined, undefined).then(
     function (res) {
-      byId("claude-connect").disabled = false;
+      buttonById("claude-connect").disabled = false;
       if (res.ok) {
-        byId("claude-key-input").value = "";
+        inputById("claude-key-input").value = "";
         checkStatusAndShow();
       } else {
         byId("claude-key-error").textContent = res.error ||
@@ -598,26 +583,26 @@ byId("claude-connect").addEventListener("click", function () {
       }
     },
   ).catch(function () {
-    byId("claude-connect").disabled = false;
+    buttonById("claude-connect").disabled = false;
     byId("claude-key-error").textContent =
       "Request failed. Is the server running?";
   });
 });
 
 // ChatGPT connect button
-byId("chatgpt-connect").addEventListener("click", function () {
-  var session = byId("chatgpt-session-input").value.trim();
+buttonById("chatgpt-connect").addEventListener("click", function () {
+  const session = inputById("chatgpt-session-input").value.trim();
   if (!session) {
     byId("chatgpt-key-error").textContent = "Paste the session cookie value.";
     return;
   }
-  byId("chatgpt-connect").disabled = true;
+  buttonById("chatgpt-connect").disabled = true;
   byId("chatgpt-key-error").textContent = "";
   connectProvider(undefined, session, undefined, undefined, undefined).then(
     function (res) {
-      byId("chatgpt-connect").disabled = false;
+      buttonById("chatgpt-connect").disabled = false;
       if (res.ok) {
-        byId("chatgpt-session-input").value = "";
+        inputById("chatgpt-session-input").value = "";
         checkStatusAndShow();
       } else {
         byId("chatgpt-key-error").textContent = res.error ||
@@ -625,16 +610,16 @@ byId("chatgpt-connect").addEventListener("click", function () {
       }
     },
   ).catch(function () {
-    byId("chatgpt-connect").disabled = false;
+    buttonById("chatgpt-connect").disabled = false;
     byId("chatgpt-key-error").textContent =
       "Request failed. Is the server running?";
   });
 });
 
 // OpenCode connect button
-byId("opencode-connect").addEventListener("click", function () {
-  var token = byId("opencode-key-input").value.trim();
-  var wsId = byId("opencode-workspace-input").value.trim();
+buttonById("opencode-connect").addEventListener("click", function () {
+  const token = inputById("opencode-key-input").value.trim();
+  const wsId = inputById("opencode-workspace-input").value.trim();
   if (!token) {
     byId("opencode-key-error").textContent = "Paste the auth cookie first.";
     return;
@@ -644,14 +629,14 @@ byId("opencode-connect").addEventListener("click", function () {
       "Paste your workspace ID (from the URL).";
     return;
   }
-  byId("opencode-connect").disabled = true;
+  buttonById("opencode-connect").disabled = true;
   byId("opencode-key-error").textContent = "";
   connectProvider(undefined, undefined, undefined, token, wsId).then(
     function (res) {
-      byId("opencode-connect").disabled = false;
+      buttonById("opencode-connect").disabled = false;
       if (res.ok) {
-        byId("opencode-key-input").value = "";
-        byId("opencode-workspace-input").value = "";
+        inputById("opencode-key-input").value = "";
+        inputById("opencode-workspace-input").value = "";
         checkStatusAndShow();
       } else {
         byId("opencode-key-error").textContent = res.error ||
@@ -659,21 +644,21 @@ byId("opencode-connect").addEventListener("click", function () {
       }
     },
   ).catch(function () {
-    byId("opencode-connect").disabled = false;
+    buttonById("opencode-connect").disabled = false;
     byId("opencode-key-error").textContent =
       "Request failed. Is the server running?";
   });
 });
 
 // Allow Enter on either input
-byId("claude-key-input").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") byId("claude-connect").click();
+inputById("claude-key-input").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") buttonById("claude-connect").click();
 });
-byId("chatgpt-session-input").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") byId("chatgpt-connect").click();
+inputById("chatgpt-session-input").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") buttonById("chatgpt-connect").click();
 });
-byId("opencode-key-input").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") byId("opencode-connect").click();
+inputById("opencode-key-input").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") buttonById("opencode-connect").click();
 });
 
 // "back to dashboard" link
@@ -687,13 +672,6 @@ byId("back-to-dash").addEventListener("click", function () {
 byId("connect-provider").addEventListener("click", function () {
   showKeyScreenWithState();
 });
-
-// QR import uses Android's native BarcodeDetector. The desktop WebKitGTK
-// runtime intentionally has no scan path; sharing out to a phone remains
-// available everywhere, but scanning in is an Android-only feature.
-if (globalThis.denoapk?.platform !== "android") {
-  byId("open-scan").style.display = "none";
-}
 
 // share connected tokens to another device via QR, and scan one in return
 byId("share-connections").addEventListener("click", function () {
@@ -714,7 +692,7 @@ if (isDesktop) {
 }
 
 // ---- reset ----
-function resetProvider(provider) {
+function resetProvider(provider: string): void {
   Promise.resolve(api.resetToken(provider)).then(function () {
     checkStatusAndShow();
   });
@@ -766,37 +744,39 @@ function checkStatusAndShow() {
 
 // ---- clock + countdowns ----
 setInterval(function () {
-  var now = new Date();
+  const now = new Date();
   byId("clock").textContent = now.toLocaleTimeString();
   if (resets.fiveHour) {
     byId("cd-5h").textContent = fmtCountdownReal(
-      new Date(resets.fiveHour) - now,
+      new Date(resets.fiveHour).getTime() - now.getTime(),
     );
   }
   if (resets.sevenDay) {
     byId("cd-7d").textContent = fmtCountdownReal(
-      new Date(resets.sevenDay) - now,
+      new Date(resets.sevenDay).getTime() - now.getTime(),
     );
   }
   chatgptResetKeys.forEach(function (key) {
-    var el = byId("cd-" + key);
+    const el = byId("cd-" + key);
     if (el && resets[key]) {
-      el.textContent = fmtCountdownReal(new Date(resets[key]) - now);
+      el.textContent = fmtCountdownReal(
+        new Date(resets[key]).getTime() - now.getTime(),
+      );
     }
   });
   if (resets["oc-rolling"]) {
     byId("cd-oc-rolling").textContent = fmtCountdownReal(
-      new Date(resets["oc-rolling"]) - now,
+      new Date(resets["oc-rolling"]).getTime() - now.getTime(),
     );
   }
   if (resets["oc-weekly"]) {
     byId("cd-oc-weekly").textContent = fmtCountdownReal(
-      new Date(resets["oc-weekly"]) - now,
+      new Date(resets["oc-weekly"]).getTime() - now.getTime(),
     );
   }
   if (resets["oc-monthly"]) {
     byId("cd-oc-monthly").textContent = fmtCountdownReal(
-      new Date(resets["oc-monthly"]) - now,
+      new Date(resets["oc-monthly"]).getTime() - now.getTime(),
     );
   }
   if (lastFetchedAt) byId("updated-ago").textContent = fmtAgo(lastFetchedAt);

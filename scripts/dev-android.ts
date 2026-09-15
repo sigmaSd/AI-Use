@@ -59,10 +59,16 @@ interface Device {
 }
 
 function parseDevices(adbOutput: string): Device[] {
+  // adb separates columns with whitespace, but wireless (mDNS) serials can
+  // themselves contain spaces — the state is always the last token, so the
+  // serial is everything before it.
   return adbOutput.split("\n").slice(1)
     .map((line) => line.trim().split(/\s+/))
     .filter((parts) => parts.length >= 2 && parts[0] !== "")
-    .map(([serial, state]) => ({ serial, state }));
+    .map((parts) => ({
+      serial: parts.slice(0, -1).join(" "),
+      state: parts[parts.length - 1],
+    }));
 }
 
 if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
@@ -137,9 +143,11 @@ if (
     "deno",
     "run",
     "-A",
-    "jsr:@sigmasd/denoapk",
+    "jsr:@sigmasd/denoapk@0.6.0",
     "build",
     root,
+    "--web-dir",
+    "src/web",
     "-o",
     apk,
   ]) !== 0

@@ -11,7 +11,6 @@
  * JS level, so the origin is the signal.
  */
 
-export const isAndroid =
-  location.hostname === "appassets.androidplatform.net";
+export const isAndroid = location.hostname === "appassets.androidplatform.net";
 
 export const isDesktop = !isAndroid;

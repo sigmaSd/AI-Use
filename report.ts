@@ -93,14 +93,14 @@ async function handlePairPublish(req: Request): Promise<Response> {
   ) {
     return json({ ok: false, error: "bad request" }, 400);
   }
-  const shareUrl = pairing.urlFor(body.code!);
+  // Binds the on-demand LAN listener on first share; null means offline.
+  const shareUrl = pairing.publish(body.code!, JSON.stringify(body.payload));
   if (!shareUrl) {
     return json({
       ok: false,
       error: "no usable network interface found — is this machine online?",
     }, 500);
   }
-  pairing.publish(body.code!, JSON.stringify(body.payload));
   return json({ ok: true, url: shareUrl });
 }
 

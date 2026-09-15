@@ -144,10 +144,17 @@ export async function scanForTokens(onImported: () => void) {
   // (a cancel click during that window) can still stop the camera once it
   // does, rather than leaking the stream.
   const started = await startScan(video, {
-    onNotAPairingCode() {
+    onNotAPairingCode(text) {
       pulse();
-      // Status stays as-is — a QR from something else entirely might
-      // legitimately be in frame briefly; no need to alarm over it.
+      status.className = "qr-status";
+      const preview = text.length > 40 ? text.slice(0, 40) + "…" : text;
+      status.textContent = "saw a QR, not a pairing code (" +
+        (preview || "empty") + ") — keep aiming at the desktop code…";
+    },
+    onDetectorStuck() {
+      pulse();
+      status.className = "qr-status";
+      status.textContent = "detector stuck — retrying…";
     },
     onFetching() {
       pulse();
@@ -190,6 +197,9 @@ export async function scanForTokens(onImported: () => void) {
   });
 
   scanner = started;
+  // startScan resolves once the camera is live — only then show the video
+  // and frame (before that it's an empty element with an ugly placeholder).
+  viewport.classList.add("live");
   // Cancel was clicked while the camera was still starting up — stop it now
   // rather than leaving it running past a modal that already closed.
   if (closed) started.stop();

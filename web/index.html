@@ -742,6 +742,17 @@
       border-left: none;
       border-top: none;
     }
+    /* The video element shows an ugly placeholder poster until the stream
+       is live — the modal adds .live to the viewport once startScan
+       resolves, and only then do video + frame appear. */
+    #scan-modal .scan-viewport video,
+    #scan-modal .scan-frame {
+      visibility: hidden;
+    }
+    #scan-modal .scan-viewport.live video,
+    #scan-modal .scan-viewport.live .scan-frame {
+      visibility: visible;
+    }
     /* Toggled on briefly by JS every time a frame is successfully decoded —
        the "yes, the camera just read something" feedback that was missing. */
     .scan-viewport.detected .scan-frame {

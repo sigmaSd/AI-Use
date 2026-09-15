@@ -803,4 +803,14 @@ setInterval(function () {
 }, 1000);
 
 // ---- init ----
-checkStatusAndShow();
+// The desktop WebView gets a fresh origin (random port) every launch, so the
+// page store starts empty there even with saved tokens. Hydrate from the
+// Deno host mirror before the first status check; fail-soft elsewhere.
+Promise.resolve(api.restoreFromBackend()).then(
+  function () {
+    checkStatusAndShow();
+  },
+  function () {
+    checkStatusAndShow();
+  },
+);

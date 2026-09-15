@@ -1,10 +1,14 @@
 /**
- * Token storage.
+ * Token storage (page-side copy).
  *
- * These used to live in Deno's localStorage because the Deno process did the
- * fetching. Now the page does, so they live in the page's own localStorage —
- * identical on the desktop webview and in the Android WebView (which gets a
- * real localStorage because assets are served from a secure origin).
+ * These used to live only in Deno's localStorage when the Deno process did
+ * the fetching. Now the page fetches, so the page keeps its own copy — but
+ * that copy alone does not survive desktop restarts: the compiled binary
+ * serves from a random port per launch, and page localStorage is
+ * origin-scoped. Every write is therefore also mirrored to the Deno host
+ * (see host/tokens.ts, web/src/backend_tokens.ts), which persists per app
+ * and rehydrates the page on boot. Android needs no mirror: its origin is
+ * stable, so the page copy alone persists there.
  *
  * ChatGPT used to need two chunked cookies (...session-token.0/.1); current
  * captures show a single ...session-token cookie. The single form lives under

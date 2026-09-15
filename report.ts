@@ -20,7 +20,11 @@
  * for why a second Deno.serve() call is what makes it reachable from a phone
  * at all, and web/src/share/ for the client side.
  *
- * - Session tokens are entered once in the UI and persist in localStorage.
+ * - Session tokens are entered once in the UI and persist in the Deno
+ *   process's localStorage (see host/tokens.ts), mirrored from the page's
+ *   own copy. The page copy alone is not enough on desktop: the WebView
+ *   origin includes a random port that changes every launch, so page
+ *   localStorage comes back empty without the host mirror.
  * - Organization / workspace IDs are auto-detected.
  *
  * Run:
@@ -31,6 +35,11 @@ import { contentType } from "@std/media-types/content-type";
 import { extname, join, normalize } from "@std/path";
 import { handleDenoapkRequest } from "@sigmasd/denoapk/handler";
 import { type PairingServer, startPairingServer } from "./host/pairing.ts";
+import {
+  clearPersistedTokens,
+  readPersistedTokens,
+  writePersistedTokens,
+} from "./host/tokens.ts";
 
 const HERE = import.meta.dirname!;
 const WEB_ROOT = join(HERE, "web");
@@ -73,6 +82,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 const CODE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const TOKEN_PROVIDER_RE = /^(claude|chatgpt|opencode|all)$/;
 
 async function handlePairPublish(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null) as
@@ -112,6 +122,57 @@ async function handle(req: Request): Promise<Response> {
   ) {
     const code = url.pathname.slice("/api/pair/status/".length);
     return json({ status: pairing.status(code) });
+  }
+
+  // Host-side token mirror (see host/tokens.ts for why the page copy alone
+  // does not survive desktop restarts). Loopback-only like everything else
+  // on the first Deno.serve(), so tokens never leave the machine here.
+  if (url.pathname === "/api/tokens" && req.method === "GET") {
+    return json(readPersistedTokens());
+  }
+
+  if (url.pathname === "/api/tokens" && req.method === "POST") {
+    const body = await req.json().catch(() => null) as
+      | Record<
+        string,
+        unknown
+      >
+      | null;
+    if (!body || typeof body !== "object") {
+      return json({ ok: false, error: "bad request" }, 400);
+    }
+    writePersistedTokens({
+      claudeToken: typeof body.claudeToken === "string"
+        ? body.claudeToken
+        : undefined,
+      chatgptSessionToken: typeof body.chatgptSessionToken === "string"
+        ? body.chatgptSessionToken
+        : undefined,
+      chatgptSession0: typeof body.chatgptSession0 === "string"
+        ? body.chatgptSession0
+        : undefined,
+      chatgptSession1: typeof body.chatgptSession1 === "string"
+        ? body.chatgptSession1
+        : undefined,
+      opencodeToken: typeof body.opencodeToken === "string"
+        ? body.opencodeToken
+        : undefined,
+      opencodeWorkspaceId: typeof body.opencodeWorkspaceId === "string"
+        ? body.opencodeWorkspaceId
+        : undefined,
+    });
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/tokens" && req.method === "DELETE") {
+    const provider = url.searchParams.get("provider") ?? "";
+    if (!TOKEN_PROVIDER_RE.test(provider)) {
+      return json({ ok: false, error: "bad request" }, 400);
+    }
+    clearPersistedTokens(
+      provider as "claude" | "chatgpt" | "opencode" | "all",
+    );
+    return json({ ok: true });
   }
 
   return await serveStatic(url.pathname);

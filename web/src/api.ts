@@ -11,6 +11,11 @@
 
 import * as store from "./store.ts";
 import * as poll from "./poll.ts";
+import {
+  deleteBackendTokens,
+  loadBackendTokens,
+  saveBackendTokens,
+} from "./backend_tokens.ts";
 
 export interface StatusResponse {
   hasClaudeToken: boolean;
@@ -118,6 +123,22 @@ export function setTokens(body: TokenRequest): TokenResponse {
     poll.clearOpenCodeState();
   }
 
+  // Mirror to the Deno host so tokens survive desktop restarts, where the
+  // page origin (random port) changes every launch. Fail-soft on Android.
+  const mirror: TokenRequest = {};
+  if (claudeTok) mirror.claudeToken = claudeTok;
+  if (chatgptSessionToken) {
+    mirror.chatgptSessionToken = chatgptSessionToken;
+  } else if (chatgptSession0 && chatgptSession1) {
+    mirror.chatgptSession0 = chatgptSession0;
+    mirror.chatgptSession1 = chatgptSession1;
+  }
+  if (opencodeTok) {
+    mirror.opencodeToken = opencodeTok;
+    if (opencodeWsId) mirror.opencodeWorkspaceId = opencodeWsId;
+  }
+  if (Object.keys(mirror).length > 0) saveBackendTokens(mirror);
+
   poll.bumpRevision();
   poll.wakePolling();
   return { ok: true };
@@ -139,6 +160,8 @@ export function resetToken(provider: string): TokenResponse {
     poll.clearOpenCodeState();
   }
 
+  deleteBackendTokens(provider);
+
   poll.bumpRevision();
 
   if (
@@ -159,4 +182,48 @@ export function init() {
   ) {
     poll.startPolling();
   }
+}
+
+/**
+ * Hydrate an empty page store from the Deno host mirror. Returns true when
+ * anything was restored. No-op on Android (no host route) and when the page
+ * already has tokens.
+ */
+export async function restoreFromBackend(): Promise<boolean> {
+  if (
+    store.getClaudeToken() || store.hasChatGPTSession() ||
+    store.getOpenCodeToken()
+  ) {
+    return false;
+  }
+  const saved = await loadBackendTokens();
+  if (!saved) return false;
+
+  let restored = false;
+  if (saved.claudeToken) {
+    store.setClaudeToken(saved.claudeToken);
+    restored = true;
+  }
+  if (saved.chatgptSessionToken) {
+    store.setChatGPTSessionSingle(saved.chatgptSessionToken);
+    restored = true;
+  } else if (saved.chatgptSession0 && saved.chatgptSession1) {
+    store.setChatGPTSessionSplit(
+      saved.chatgptSession0,
+      saved.chatgptSession1,
+    );
+    restored = true;
+  }
+  if (saved.opencodeToken) {
+    store.setOpenCodeToken(saved.opencodeToken);
+    if (saved.opencodeWorkspaceId) {
+      store.setOpenCodeWorkspace(saved.opencodeWorkspaceId);
+    }
+    restored = true;
+  }
+  if (restored) {
+    poll.bumpRevision();
+    poll.startPolling();
+  }
+  return restored;
 }

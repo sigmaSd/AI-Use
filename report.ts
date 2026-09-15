@@ -182,9 +182,22 @@ Deno.serve(handle);
 pairing = startPairingServer();
 
 if (Deno.BrowserWindow) {
-  const _win = new Deno.BrowserWindow({
+  const win = new Deno.BrowserWindow({
     title: "AI Usage",
     height: 1100,
     width: 1300,
+  });
+  // Closing the window does not stop the runtime on its own: both servers
+  // plus the pairing sweep timer keep the event loop alive, so without this
+  // the process lingers until Ctrl-C. Shut everything down and exit.
+  win.addEventListener("close", () => {
+    void (async () => {
+      try {
+        await pairing.close();
+      } catch {
+        // Already shutting down — fall through to exit.
+      }
+      Deno.exit(0);
+    })();
   });
 }

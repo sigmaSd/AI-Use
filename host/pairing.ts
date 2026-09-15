@@ -60,6 +60,8 @@ export interface PairingServer {
   publish(code: string, payload: string): void;
   /** Has `code` already been consumed or never existed? Lets the sharer poll for success. */
   status(code: string): "waiting" | "claimed-or-unknown";
+  /** Stop the sweep timer and shut down the LAN server. */
+  close(): Promise<void>;
 }
 
 export function startPairingServer(): PairingServer {
@@ -85,7 +87,7 @@ export function startPairingServer(): PairingServer {
 
   // Sweeps codes nobody ever redeemed, so a dismissed share doesn't leak
   // memory across a long-running desktop session.
-  setInterval(() => {
+  const sweep = setInterval(() => {
     const now = Date.now();
     for (const [code, entry] of store) {
       if (entry.expiresAt < now) store.delete(code);
@@ -102,6 +104,10 @@ export function startPairingServer(): PairingServer {
     },
     status(code: string) {
       return store.has(code) ? "waiting" : "claimed-or-unknown";
+    },
+    async close() {
+      clearInterval(sweep);
+      await server.shutdown();
     },
   };
 }

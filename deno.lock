@@ -1,7 +1,7 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@sigmasd/denoapk@0.7.0": "0.7.0",
+    "jsr:@sigmasd/denoapk@0.8.0": "0.8.0",
     "jsr:@std/assert@1.0.19": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "jsr:@std/internal@^1.0.14": "1.0.14",
@@ -10,8 +10,8 @@
     "npm:qrcode-generator@^2.0.4": "2.0.4"
   },
   "jsr": {
-    "@sigmasd/denoapk@0.7.0": {
-      "integrity": "cbeb6e74ef1f0011850072bbebb5d0797be34fa4323158082f5d57a2470a5750"
+    "@sigmasd/denoapk@0.8.0": {
+      "integrity": "2f37079d8fa563667158c684e3b734ca8357e351381397d0ce307760e3b70646"
     },
     "@std/assert@1.0.19": {
       "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
@@ -39,7 +39,7 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@sigmasd/denoapk@0.7.0",
+      "jsr:@sigmasd/denoapk@0.8.0",
       "jsr:@std/assert@1.0.19",
       "jsr:@std/media-types@^1.1.0",
       "jsr:@std/path@^1.1.6",

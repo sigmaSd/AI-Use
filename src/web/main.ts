@@ -510,10 +510,12 @@ function updateKeyScreenState() {
   }
   if (hasChatGPT) {
     inputById("chatgpt-session-input").style.display = "none";
+    inputById("chatgpt-session1-input").style.display = "none";
     buttonById("chatgpt-connect").style.display = "none";
     byId("chatgpt-connected-badge").style.display = "inline";
   } else {
     inputById("chatgpt-session-input").style.display = "";
+    inputById("chatgpt-session1-input").style.display = "";
     buttonById("chatgpt-connect").style.display = "";
     byId("chatgpt-connected-badge").style.display = "none";
   }
@@ -548,14 +550,10 @@ function connectProvider(
 ): Promise<TokenResponse> {
   const body: api.TokenRequest = {};
   if (claudeToken) body.claudeToken = claudeToken;
-  // Legacy callers passed (session0, session1) for the chunked cookies;
-  // the current UI passes a single session-token value as `chatgptSession`.
-  if (chatgptSession && chatgptSession1) {
-    body.chatgptSession0 = chatgptSession;
-    body.chatgptSession1 = chatgptSession1;
-  } else if (chatgptSession) {
-    body.chatgptSessionToken = chatgptSession;
-  }
+  // First field is the single session-token cookie, or `.0` when the
+  // optional `.1` field is filled; api.setTokens sorts out which.
+  if (chatgptSession) body.chatgptSessionToken = chatgptSession;
+  if (chatgptSession1) body.chatgptSession1 = chatgptSession1;
   if (opencodeToken) body.opencodeToken = opencodeToken;
   if (opencodeWorkspaceId) body.opencodeWorkspaceId = opencodeWorkspaceId;
 
@@ -592,17 +590,19 @@ buttonById("claude-connect").addEventListener("click", function () {
 // ChatGPT connect button
 buttonById("chatgpt-connect").addEventListener("click", function () {
   const session = inputById("chatgpt-session-input").value.trim();
+  const session1 = inputById("chatgpt-session1-input").value.trim();
   if (!session) {
     byId("chatgpt-key-error").textContent = "Paste the session cookie value.";
     return;
   }
   buttonById("chatgpt-connect").disabled = true;
   byId("chatgpt-key-error").textContent = "";
-  connectProvider(undefined, session, undefined, undefined, undefined).then(
+  connectProvider(undefined, session, session1, undefined, undefined).then(
     function (res) {
       buttonById("chatgpt-connect").disabled = false;
       if (res.ok) {
         inputById("chatgpt-session-input").value = "";
+        inputById("chatgpt-session1-input").value = "";
         checkStatusAndShow();
       } else {
         byId("chatgpt-key-error").textContent = res.error ||
@@ -654,9 +654,11 @@ buttonById("opencode-connect").addEventListener("click", function () {
 inputById("claude-key-input").addEventListener("keydown", function (e) {
   if (e.key === "Enter") buttonById("claude-connect").click();
 });
-inputById("chatgpt-session-input").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") buttonById("chatgpt-connect").click();
-});
+for (const id of ["chatgpt-session-input", "chatgpt-session1-input"]) {
+  inputById(id).addEventListener("keydown", function (e) {
+    if (e.key === "Enter") buttonById("chatgpt-connect").click();
+  });
+}
 inputById("opencode-key-input").addEventListener("keydown", function (e) {
   if (e.key === "Enter") buttonById("opencode-connect").click();
 });

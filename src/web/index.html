@@ -829,10 +829,14 @@
               id="chatgpt-connected-badge">✓ connected</span>
           </div>
           <input id="chatgpt-session-input" type="password"
-            placeholder="__Secure-next-auth.session-token" autocomplete="off"
-            spellcheck="false" />
+            placeholder="__Secure-next-auth.session-token (or .0)"
+            autocomplete="off" spellcheck="false" />
+          <input id="chatgpt-session1-input" type="password"
+            style="margin-top:6px"
+            placeholder="__Secure-next-auth.session-token.1 (only if split)"
+            autocomplete="off" spellcheck="false" />
           <div
-            class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy the value of <b>__Secure-next-auth.session-token</b></div>
+            class="provider-hint">devtools → Storage → Cookies → chatgpt.com → copy <b>__Secure-next-auth.session-token</b>, or if it's split, <b>.0</b> into the first box and <b>.1</b> into the second</div>
           <button class="provider-connect"
             id="chatgpt-connect">Connect ChatGPT</button>
           <div class="provider-error-msg" id="chatgpt-key-error"></div>

@@ -46,11 +46,10 @@ export class ChatGPTAuthError extends Error {
 /**
  * ChatGPT session cookies.
  *
- * ChatGPT used to chunk `__Secure-next-auth.session-token` into `.0`/`.1`
- * parts once the value grew past the per-cookie size limit; recent captures
- * show a single un-chunked `__Secure-next-auth.session-token` cookie instead.
- * Both shapes are accepted — new connects store the single form, old split
- * installs keep working until their cookies rotate.
+ * ChatGPT chunks `__Secure-next-auth.session-token` into `.0`/`.1` parts
+ * when the value grows past the per-cookie size limit, and serves a single
+ * un-chunked cookie otherwise; which one you get has flipped back and forth.
+ * Both shapes are accepted and stored as pasted.
  */
 export type ChatGPTSession =
   | { kind: "single"; token: string }

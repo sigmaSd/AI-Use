@@ -46,6 +46,40 @@ export function getUsage(): poll.UsageSnapshot {
   return poll.snapshot();
 }
 
+const CHATGPT_COOKIE_RE =
+  /__Secure-next-auth\.session-token(\.[01])?=([^;\s]+)/g;
+
+export function normalizeChatGPTSession(
+  single?: string,
+  part0?: string,
+  part1?: string,
+): { single?: string; part0?: string; part1?: string } {
+  const out: { single?: string; part0?: string; part1?: string } = {};
+  for (const raw of [single, part0, part1]) {
+    if (!raw || !raw.includes("__Secure-next-auth.session-token")) continue;
+    for (const m of raw.matchAll(CHATGPT_COOKIE_RE)) {
+      if (m[1] === ".0") out.part0 = m[2];
+      else if (m[1] === ".1") out.part1 = m[2];
+      else out.single = m[2];
+    }
+  }
+  const bare = (v?: string) =>
+    v && !v.includes("__Secure-next-auth.session-token")
+      ? v.replace(/;$/, "")
+      : undefined;
+  // Bare values: the first UI field doubles as `.0` when `.1` is given.
+  const s = bare(single), p0 = bare(part0), p1 = bare(part1);
+  if (p0) out.part0 ??= p0;
+  if (p1) out.part1 ??= p1;
+  if (s) {
+    if (out.part1 && !out.part0) out.part0 = s;
+    else out.single ??= s;
+  }
+  // Complete chunk pair wins over a stray single value from the same paste.
+  if (out.part0 && out.part1) delete out.single;
+  return out;
+}
+
 export function setTokens(body: TokenRequest): TokenResponse {
   let claudeTok = body.claudeToken?.trim();
   let chatgptSessionToken = body.chatgptSessionToken?.trim();
@@ -58,18 +92,17 @@ export function setTokens(body: TokenRequest): TokenResponse {
   if (claudeTok && claudeTok.startsWith("sessionKey=")) {
     claudeTok = claudeTok.slice(11);
   }
-  chatgptSessionToken = chatgptSessionToken?.replace(
-    /^__Secure-next-auth\.session-token=/,
-    "",
-  ).replace(/;$/, "");
-  chatgptSession0 = chatgptSession0?.replace(
-    /^__Secure-next-auth\.session-token\.0=/,
-    "",
-  ).replace(/;$/, "");
-  chatgptSession1 = chatgptSession1?.replace(
-    /^__Secure-next-auth\.session-token\.1=/,
-    "",
-  ).replace(/;$/, "");
+  // ChatGPT flips between one `__Secure-next-auth.session-token` cookie and
+  // chunked `.0`/`.1` ones. Accept either, including a whole pasted cookie
+  // string or a `.0=`-prefixed value dropped into the single field.
+  const chatgpt = normalizeChatGPTSession(
+    chatgptSessionToken,
+    chatgptSession0,
+    chatgptSession1,
+  );
+  chatgptSessionToken = chatgpt.single;
+  chatgptSession0 = chatgpt.part0;
+  chatgptSession1 = chatgpt.part1;
   if (opencodeTok && opencodeTok.startsWith("auth=")) {
     opencodeTok = opencodeTok.slice(5);
   }
@@ -93,8 +126,9 @@ export function setTokens(body: TokenRequest): TokenResponse {
   ) {
     return {
       ok: false,
-      error:
-        "Paste the ChatGPT session cookie value (__Secure-next-auth.session-token).",
+      error: chatgptSession0
+        ? "Also paste __Secure-next-auth.session-token.1."
+        : "Also paste __Secure-next-auth.session-token.0.",
     };
   }
 

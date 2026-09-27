@@ -10,10 +10,10 @@
  * and rehydrates the page on boot. Android needs no mirror: its origin is
  * stable, so the page copy alone persists there.
  *
- * ChatGPT used to need two chunked cookies (...session-token.0/.1); current
- * captures show a single ...session-token cookie. The single form lives under
- * CHATGPT_SESSION_KEY, the legacy split form under _0/_1 — both are still
- * read, new connects always write the single form.
+ * ChatGPT alternates between a single ...session-token cookie and two
+ * chunked ones (...session-token.0/.1). The single form lives under
+ * CHATGPT_SESSION_KEY, the split form under _0/_1; connects write whichever
+ * shape was pasted.
  */
 
 import type { ChatGPTSession } from "./providers/chatgpt.ts";

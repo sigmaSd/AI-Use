@@ -28,9 +28,9 @@ export const OPENCODE_WORKSPACE_KEY = "opencode_workspace_id";
  */
 export interface TokenFields {
   claudeToken?: string;
-  /** Current single-cookie form: value of `__Secure-next-auth.session-token`. */
+  /** Single-cookie form: value of `__Secure-next-auth.session-token`. */
   chatgptSessionToken?: string;
-  /** Legacy chunked form: values of `...session-token.0` / `.1`. */
+  /** Chunked form: values of `...session-token.0` / `.1`. */
   chatgptSession0?: string;
   chatgptSession1?: string;
   opencodeToken?: string;

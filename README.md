@@ -1,7 +1,8 @@
 # AI-Use
 
 Usage monitor for Claude.ai, ChatGPT, and OpenCode Go — five-hour/weekly limits,
-reset countdowns, and spend, in one window. Desktop app (Linux, Windows, macOS)
+reset countdowns, spend, and the free usage-limit resets you hold (with a
+warning before they expire), in one window. Desktop app (Linux, Windows, macOS)
 and Android.
 
 <img width="1366" height="768" alt="aiuse dashboard" src="https://github.com/user-attachments/assets/9e648248-4651-4d07-bb9c-c4baf0b582a6" />

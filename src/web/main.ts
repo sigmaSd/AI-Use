@@ -16,11 +16,13 @@ import { isDesktop } from "./platform.ts";
 import type { ProviderError } from "./poll.ts";
 import type {
   ClaudeUsageResponse,
+  DollarAllowance,
   ExtraUsage,
   PrepaidCredits,
 } from "./providers/claude.ts";
 import type {
   ChatGPTRateLimit,
+  ChatGPTResetCreditsResponse,
   ChatGPTUsageResponse,
   ChatGPTUsageWindow,
 } from "./providers/chatgpt.ts";
@@ -35,6 +37,11 @@ import {
   fmtWindow,
   statusWord,
 } from "./ui/format.ts";
+import {
+  chatgptResetCards,
+  claudeResetCards,
+  type ResetCard,
+} from "./ui/resets.ts";
 
 api.init();
 
@@ -61,26 +68,25 @@ function showScreen(name: string): void {
   byId("dashboard").style.display = (name === "dashboard") ? "block" : "none";
 }
 
-function buildMeter(elId: string, pct: number): void {
-  const el = byId(elId);
-  const totalCells = 20;
-  const onCells = Math.round((pct / 100) * totalCells);
-  const color = colorVar(pct);
-  el.innerHTML = "";
-  for (let i = 0; i < totalCells; i++) {
-    const c = document.createElement("div");
-    c.className = "cell";
-    if (i < onCells) c.style.background = color;
-    el.appendChild(c);
+function fillMeter(el: HTMLElement, pct: number, color: string): void {
+  let fill = el.firstElementChild as HTMLElement | null;
+  if (!fill) {
+    fill = document.createElement("div");
+    fill.className = "fill";
+    el.appendChild(fill);
   }
+  fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  fill.style.background = color;
+}
+
+function buildMeter(elId: string, pct: number): void {
+  fillMeter(byId(elId), pct, colorVar(pct));
 }
 
 function applyStatus(elId: string, pct: number): void {
   const badge = byId(elId);
-  const color = colorVar(pct);
   badge.textContent = statusWord(pct);
-  badge.style.color = color;
-  badge.style.borderColor = color;
+  badge.style.color = colorVar(pct);
 }
 
 // Resets store the absolute reset time (ISO string) for countdown calculation.
@@ -106,6 +112,7 @@ function updateProviderSections() {
   byId("reset-claude").style.display = hasClaude ? "" : "none";
   byId("reset-chatgpt").style.display = hasChatGPT ? "" : "none";
   byId("reset-opencode").style.display = hasOpenCode ? "" : "none";
+  if (!hasClaude && !hasChatGPT) byId("resets-section").style.display = "none";
 }
 
 // ---- error rendering ----
@@ -190,6 +197,82 @@ function renderClaudeUsage(
 
   renderExtraCredits(usage.extra_usage, prepaidCredits);
   renderScopedLimits(usage);
+  renderAllowances(usage.dollar_allowances ?? []);
+}
+
+/** "Monthly" when the reset is weeks out; the API doesn't name the period. */
+function allowanceLabel(a: DollarAllowance): string {
+  const days = (new Date(a.resets_at).getTime() - Date.now()) / 86_400_000;
+  return days > 14 ? "Monthly allowance" : "Dollar allowance";
+}
+
+function renderAllowances(allowances: DollarAllowance[]): void {
+  const container = byId("claude-allowances");
+  container.style.display = allowances.length ? "" : "none";
+  container.innerHTML = "";
+  allowances.forEach(function (a) {
+    const pct = a.utilization;
+    const panel = document.createElement("div");
+    panel.className = "panel";
+
+    const head = document.createElement("div");
+    head.className = "row-head";
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = allowanceLabel(a);
+    const status = document.createElement("div");
+    status.className = "status";
+    status.textContent = a.locked_reason ? "locked" : statusWord(pct);
+    status.style.color = a.locked_reason ? "var(--red)" : colorVar(pct);
+    head.appendChild(label);
+    head.appendChild(status);
+
+    const pctEl = document.createElement("div");
+    pctEl.className = "pct";
+    const used = a.used_dollars ?? a.limit_dollars * pct / 100;
+    pctEl.textContent = "$" + used.toFixed(2);
+    const of = document.createElement("small");
+    of.textContent = " of $" + a.limit_dollars.toFixed(2);
+    pctEl.appendChild(of);
+
+    const meter = document.createElement("div");
+    meter.className = "meter";
+    fillMeter(meter, pct, colorVar(pct));
+
+    const countdown = document.createElement("div");
+    countdown.className = "countdown";
+    countdown.appendChild(document.createTextNode("resets in "));
+    const cd = document.createElement("span");
+    cd.setAttribute("data-until", a.resets_at);
+    cd.textContent = fmtCountdownReal(
+      new Date(a.resets_at).getTime() - Date.now(),
+    );
+    countdown.appendChild(cd);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const metaLabel = document.createElement("span");
+    metaLabel.textContent = a.remaining_dollars != null
+      ? "$" + a.remaining_dollars.toFixed(2) + " left"
+      : Math.round(pct) + "% used";
+    const metaTime = document.createElement("b");
+    metaTime.textContent = fmtTime(a.resets_at);
+    meta.appendChild(metaLabel);
+    meta.appendChild(metaTime);
+
+    panel.appendChild(head);
+    panel.appendChild(pctEl);
+    panel.appendChild(meter);
+    panel.appendChild(countdown);
+    panel.appendChild(meta);
+    if (a.locked_reason) {
+      const note = document.createElement("div");
+      note.className = "reset-warning";
+      note.textContent = a.locked_reason;
+      panel.appendChild(note);
+    }
+    container.appendChild(panel);
+  });
 }
 
 function renderExtraCredits(
@@ -261,7 +344,6 @@ function renderScopedLimits(usage: ClaudeUsageResponse): void {
     badge.className = "status";
     badge.textContent = label;
     badge.style.color = color;
-    badge.style.borderColor = color;
     head.appendChild(nameEl);
     head.appendChild(badge);
 
@@ -271,14 +353,7 @@ function renderScopedLimits(usage: ClaudeUsageResponse): void {
 
     const meterEl = document.createElement("div");
     meterEl.className = "meter";
-    const totalCells = 20;
-    const onCells = Math.round((pct / 100) * totalCells);
-    for (let i = 0; i < totalCells; i++) {
-      const c = document.createElement("div");
-      c.className = "cell";
-      if (i < onCells) c.style.background = color;
-      meterEl.appendChild(c);
-    }
+    fillMeter(meterEl, pct, color);
 
     row.appendChild(head);
     row.appendChild(pctEl);
@@ -449,6 +524,121 @@ function renderOpenCodeUsage(
   renderOCWindow("oc-monthly", data.monthlyUsage);
 }
 
+// ---- usage-limit resets ----
+const PROVIDER_NAMES: Record<ResetCard["provider"], string> = {
+  claude: "Claude",
+  chatgpt: "ChatGPT",
+};
+
+function expiryChip(card: ResetCard): string {
+  if (card.urgency === "urgent") return "expiring";
+  if (card.urgency === "soon") return "expires soon";
+  if (card.adviceTone === "go") return "use now";
+  return card.adviceTone === "blocked" ? "locked" : "available";
+}
+
+function renderResetCard(card: ResetCard): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "reset-card " + card.urgency;
+
+  const count = document.createElement("div");
+  count.className = "reset-count";
+  count.textContent = String(card.left);
+  const unit = document.createElement("small");
+  unit.textContent = card.total != null && card.total > card.left
+    ? "of " + card.total
+    : card.left === 1
+    ? "reset"
+    : "resets";
+  count.appendChild(unit);
+
+  const body = document.createElement("div");
+  body.className = "reset-body";
+
+  const head = document.createElement("div");
+  head.className = "reset-head";
+  const name = document.createElement("span");
+  name.className = "reset-provider";
+  const dot = document.createElement("span");
+  dot.className = "provider-dot";
+  dot.style.background = "var(--" + card.provider + ")";
+  name.appendChild(dot);
+  name.appendChild(document.createTextNode(PROVIDER_NAMES[card.provider]));
+  const chip = document.createElement("span");
+  chip.className = "reset-chip";
+  chip.textContent = expiryChip(card);
+  head.appendChild(name);
+  head.appendChild(chip);
+  body.appendChild(head);
+
+  const expiry = document.createElement("div");
+  expiry.className = "reset-expiry";
+  if (card.expiresAt) {
+    expiry.appendChild(document.createTextNode("expires in "));
+    const cd = document.createElement("b");
+    cd.setAttribute("data-until", card.expiresAt);
+    cd.textContent = fmtCountdownReal(
+      new Date(card.expiresAt).getTime() - Date.now(),
+    );
+    expiry.appendChild(cd);
+    expiry.appendChild(
+      document.createTextNode(" · " + fmtTime(card.expiresAt)),
+    );
+  } else {
+    expiry.textContent = "no expiry reported";
+  }
+  body.appendChild(expiry);
+
+  if (card.detail) {
+    const detail = document.createElement("div");
+    detail.className = "reset-detail";
+    detail.textContent = card.detail;
+    detail.title = card.detail;
+    body.appendChild(detail);
+  }
+
+  if (card.warning) {
+    const warning = document.createElement("div");
+    warning.className = "reset-warning";
+    warning.textContent = card.warning;
+    body.appendChild(warning);
+  }
+
+  const advice = document.createElement("div");
+  advice.className = "reset-advice " + card.adviceTone;
+  advice.textContent = card.advice;
+  body.appendChild(advice);
+
+  el.appendChild(count);
+  el.appendChild(body);
+  return el;
+}
+
+function renderResets(
+  claude: ClaudeUsageResponse | null,
+  chatgpt: ChatGPTUsageResponse | null,
+  chatgptCredits: ChatGPTResetCreditsResponse | null,
+  chatgptCreditsError: string | null,
+): void {
+  const cards = [
+    ...(hasClaude ? claudeResetCards(claude) : []),
+    ...(hasChatGPT
+      ? chatgptResetCards(
+        chatgpt,
+        chatgptCredits,
+        Date.now(),
+        chatgptCreditsError,
+      )
+      : []),
+  ];
+  byId("resets-section").style.display = cards.length ? "" : "none";
+  const list = byId("resets-list");
+  list.innerHTML = "";
+  cards.forEach(function (card) {
+    list.appendChild(renderResetCard(card));
+  });
+}
+
 // ---- data fetching ----
 function fetchUsageOnce() {
   // Reading poll state is synchronous now, so responses can no longer
@@ -474,6 +664,12 @@ function fetchUsageOnce() {
     if (body.opencode) {
       renderOpenCodeUsage(body.opencode.usage, body.opencode.error);
     }
+    renderResets(
+      body.claude?.usage ?? null,
+      body.chatgpt?.usage ?? null,
+      body.chatgpt?.resetCredits ?? null,
+      body.chatgpt?.resetCreditsError ?? null,
+    );
     lastFetchedAt = body.lastFetchedAt;
     byId("updated-ago").textContent = fmtAgo(lastFetchedAt);
     byId("stamp").textContent = lastFetchedAt
@@ -691,6 +887,10 @@ byId("open-scan").addEventListener("click", function () {
 if (isDesktop) {
   byId("open-scan").style.display = "none";
   byId("scan-or-divider").style.display = "none";
+} else {
+  // ...and the reverse: the phone is the receiving end, so "share to phone"
+  // has nowhere to go from here.
+  byId("share-connections").style.display = "none";
 }
 
 // ---- reset ----
@@ -781,6 +981,14 @@ setInterval(function () {
       new Date(resets["oc-monthly"]).getTime() - now.getTime(),
     );
   }
+  document.querySelectorAll<HTMLElement>("[data-until]").forEach(
+    function (el) {
+      el.textContent = fmtCountdownReal(
+        new Date(el.getAttribute("data-until") || "").getTime() -
+          now.getTime(),
+      );
+    },
+  );
   if (lastFetchedAt) byId("updated-ago").textContent = fmtAgo(lastFetchedAt);
 }, 1000);
 

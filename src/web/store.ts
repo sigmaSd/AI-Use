@@ -49,6 +49,25 @@ export function clearClaudeOrg() {
   localStorage.removeItem(CLAUDE_ORG_KEY);
 }
 
+// Page-only: the opt-in query parameter claude.ai's usage endpoint wants
+// before it includes usage-limit resets, and when we last went looking for
+// a new one (see providers/claude.ts).
+const CLAUDE_RESETS_PARAM_KEY = "claude_resets_param";
+const CLAUDE_RESETS_PROBED_KEY = "claude_resets_probed_at";
+
+export function getClaudeResetsParam(): string | null {
+  return localStorage.getItem(CLAUDE_RESETS_PARAM_KEY);
+}
+export function setClaudeResetsParam(v: string) {
+  localStorage.setItem(CLAUDE_RESETS_PARAM_KEY, v);
+}
+export function getClaudeResetsProbedAt(): number {
+  return Number(localStorage.getItem(CLAUDE_RESETS_PROBED_KEY)) || 0;
+}
+export function setClaudeResetsProbedAt(v: number) {
+  localStorage.setItem(CLAUDE_RESETS_PROBED_KEY, String(v));
+}
+
 export function getChatGPTSession0(): string | null {
   return localStorage.getItem(CHATGPT_SESSION_0_KEY);
 }

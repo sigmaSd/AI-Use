@@ -1,5 +1,7 @@
 const SESSION_URL = "https://chatgpt.com/api/auth/session";
-const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const BACKEND_URL = "https://chatgpt.com";
+const USAGE_PATH = "/backend-api/wham/usage";
+const RESET_CREDITS_PATH = "/backend-api/wham/rate-limit-reset-credits";
 const ACCESS_TOKEN_FALLBACK_TTL_MS = 5 * 60_000;
 const ACCESS_TOKEN_EXPIRY_SKEW_MS = 30_000;
 
@@ -21,6 +23,7 @@ export interface ChatGPTRateLimit {
 }
 
 export interface ChatGPTUsageResponse {
+  account_id?: string;
   plan_type?: string;
   rate_limit?: ChatGPTRateLimit | null;
   code_review_rate_limit?: ChatGPTRateLimit | null;
@@ -34,6 +37,33 @@ export interface ChatGPTUsageResponse {
     unlimited?: boolean;
     overage_limit_reached?: boolean;
   } | null;
+  /**
+   * Usage-limit resets. `applicable_available_count` is how many of
+   * `available_count` can be spent right now.
+   */
+  rate_limit_reset_credits?: {
+    available_count?: number;
+    applicable_available_count?: number;
+  } | null;
+}
+
+/** One usage-limit reset, as listed by wham/rate-limit-reset-credits. */
+export interface ChatGPTResetCredit {
+  id: string;
+  reset_type?: string;
+  is_supported_by_plan?: boolean;
+  /** "available" until redeemed or expired. */
+  status: string;
+  granted_at?: string;
+  expires_at?: string | null;
+  redeemed_at?: string | null;
+  title?: string;
+  description?: string;
+}
+
+export interface ChatGPTResetCreditsResponse {
+  credits?: ChatGPTResetCredit[];
+  available_count?: number;
 }
 
 export class ChatGPTAuthError extends Error {
@@ -192,31 +222,38 @@ export class ChatGPTClient {
     }
   }
 
-  private async requestUsage(accessToken: string): Promise<Response> {
-    return await this.fetchFn(USAGE_URL, {
+  private async requestBackend(
+    path: string,
+    accessToken: string,
+    extraHeaders: Record<string, string>,
+  ): Promise<Response> {
+    return await this.fetchFn(BACKEND_URL + path, {
       headers: {
         "Accept": "application/json",
         "Authorization": `Bearer ${accessToken}`,
         "oai-device-id": this.deviceId,
-        "X-OpenAI-Target-Path": "/backend-api/wham/usage",
-        "X-OpenAI-Target-Route": "/backend-api/wham/usage",
+        "X-OpenAI-Target-Path": path,
+        "X-OpenAI-Target-Route": path,
         "User-Agent": this.userAgent,
+        ...extraHeaders,
       },
     });
   }
 
-  async fetchUsage(
+  private async getBackend<T>(
     session: ChatGPTSession,
-  ): Promise<ChatGPTUsageResponse> {
+    path: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<T> {
     let accessToken = await this.resolveAccessToken(session);
-    let res = await this.requestUsage(accessToken);
+    let res = await this.requestBackend(path, accessToken, extraHeaders);
 
     if (res.status === 401 || res.status === 403) {
       // The access token may have been revoked independently of the browser
       // cookies. Refresh once before surfacing an authentication failure.
       this.clearAccessToken();
       accessToken = await this.resolveAccessToken(session, true);
-      res = await this.requestUsage(accessToken);
+      res = await this.requestBackend(path, accessToken, extraHeaders);
     }
 
     if (res.status === 401 || res.status === 403) {
@@ -225,6 +262,26 @@ export class ChatGPTClient {
     if (!res.ok) {
       throw new Error(`request failed: ${res.status} ${res.statusText}`);
     }
-    return await res.json() as ChatGPTUsageResponse;
+    return await res.json() as T;
+  }
+
+  async fetchUsage(
+    session: ChatGPTSession,
+  ): Promise<ChatGPTUsageResponse> {
+    return await this.getBackend(session, USAGE_PATH);
+  }
+
+  /**
+   * Usage-limit resets with per-reset expiry (wham/usage only counts them).
+   * Headers mirror what chatgpt.com's Codex page sends; `accountId` is
+   * wham/usage's `account_id`.
+   */
+  async fetchResetCredits(
+    session: ChatGPTSession,
+    accountId?: string,
+  ): Promise<ChatGPTResetCreditsResponse> {
+    const headers: Record<string, string> = { "originator": "Codex Browser" };
+    if (accountId) headers["ChatGPT-Account-Id"] = accountId;
+    return await this.getBackend(session, RESET_CREDITS_PATH, headers);
   }
 }

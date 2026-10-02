@@ -7,7 +7,14 @@
  * the host proxy before the browser ever sees it.
  */
 
-import { getClaudeOrg, setClaudeOrg } from "../store.ts";
+import {
+  getClaudeOrg,
+  getClaudeResetsParam,
+  getClaudeResetsProbedAt,
+  setClaudeOrg,
+  setClaudeResetsParam,
+  setClaudeResetsProbedAt,
+} from "../store.ts";
 
 export class AuthError extends Error {}
 
@@ -47,12 +54,90 @@ export interface SpendInfo {
   disabled_reason?: string | null;
   can_purchase_credits?: boolean;
 }
+/** One promotional grant of usage-limit resets ("Reset for free"). */
+export interface ResetGrant {
+  id: string;
+  label: string;
+  resets_total: number;
+  resets_left: number;
+  starts_at: string;
+  /** When unused resets in this grant expire. */
+  ends_at: string;
+  /** Limit windows a reset clears, e.g. "five_hour", "seven_day". */
+  clears: string[];
+  paused: boolean;
+  usable_now: boolean;
+  use_requires_limit: boolean;
+}
+/**
+ * Usage-limit resets. claude.ai only includes this block when the usage
+ * request opts in with `?<name>=1`, and returns it under that same
+ * obfuscated name (`cedar_ember` as of Oct 2026). See fetchClaudeUsage.
+ */
+export interface ResetCredits {
+  eligible: boolean;
+  ineligible_reason: string | null;
+  grants: ResetGrant[];
+  cooldown_until: string | null;
+}
 export interface ClaudeUsageResponse {
   five_hour: ClaudeWindow;
   seven_day: ClaudeWindow;
   spend?: SpendInfo;
   extra_usage?: ExtraUsage | null;
   limits?: LimitEntry[];
+  /** Not sent by claude.ai: attached by fetchClaudeUsage, found by shape. */
+  reset_credits?: ResetCredits | null;
+  /** Not sent by claude.ai: attached by fetchClaudeUsage, found by shape. */
+  dollar_allowances?: DollarAllowance[];
+}
+
+/**
+ * A spend-capped allowance outside the 5-hour/weekly windows, e.g. a
+ * monthly $250 one. claude.ai sends these under obfuscated names
+ * (`iguana_necktie` as of Oct 2026), so they are found by shape.
+ */
+export interface DollarAllowance {
+  key: string;
+  utilization: number;
+  resets_at: string;
+  limit_dollars: number;
+  used_dollars: number | null;
+  remaining_dollars: number | null;
+  locked_reason: string | null;
+}
+
+/** Windows the dashboard already renders on their own. */
+const KNOWN_WINDOWS = new Set(["five_hour", "seven_day"]);
+
+export function findDollarAllowances(
+  usage: Record<string, unknown>,
+): DollarAllowance[] {
+  const out: DollarAllowance[] = [];
+  for (const [key, value] of Object.entries(usage)) {
+    if (KNOWN_WINDOWS.has(key) || !value || typeof value !== "object") {
+      continue;
+    }
+    const v = value as Record<string, unknown>;
+    if (
+      typeof v.utilization !== "number" || typeof v.resets_at !== "string" ||
+      typeof v.limit_dollars !== "number" || v.limit_dollars <= 0
+    ) continue;
+    out.push({
+      key,
+      utilization: v.utilization,
+      resets_at: v.resets_at,
+      limit_dollars: v.limit_dollars,
+      used_dollars: typeof v.used_dollars === "number" ? v.used_dollars : null,
+      remaining_dollars: typeof v.remaining_dollars === "number"
+        ? v.remaining_dollars
+        : null,
+      locked_reason: typeof v.locked_reason === "string"
+        ? v.locked_reason
+        : null,
+    });
+  }
+  return out;
 }
 export interface PrepaidCredits {
   amount: number;
@@ -107,12 +192,54 @@ async function resolveClaudeOrg(token: string): Promise<string> {
   return orgId;
 }
 
-export async function fetchClaudeUsage(
+/** Last known opt-in parameter for usage-limit resets. */
+export const DEFAULT_RESETS_PARAM = "cedar_ember";
+const RESETS_PROBE_INTERVAL_MS = 24 * 3_600_000;
+
+function isResetCredits(v: unknown): v is ResetCredits {
+  if (!v || typeof v !== "object") return false;
+  const grants = (v as { grants?: unknown }).grants;
+  if (!Array.isArray(grants)) return false;
+  if (grants.length === 0) return "eligible" in v;
+  const g = grants[0];
+  return !!g && typeof g === "object" && "resets_left" in g &&
+    "ends_at" in g;
+}
+
+/**
+ * Find the usage-limit resets block by its shape rather than its name, since
+ * the name is an obfuscated feature flag that can change.
+ */
+export function findResetCredits(
+  usage: Record<string, unknown>,
+): { key: string; credits: ResetCredits } | null {
+  for (const [key, value] of Object.entries(usage)) {
+    if (isResetCredits(value)) return { key, credits: value };
+  }
+  return null;
+}
+
+/**
+ * Opt-in parameters to try when the known one stops working. The usage
+ * response lists every optional block as a top-level key — null until opted
+ * into — so those keys are the candidate names.
+ */
+export function resetsProbeParams(usage: Record<string, unknown>): string[] {
+  return Object.keys(usage).filter((k) =>
+    usage[k] === null && /^[a-z0-9_]+$/.test(k)
+  );
+}
+
+async function requestClaudeUsage(
   token: string,
-): Promise<ClaudeUsageResponse> {
-  const orgId = await resolveClaudeOrg(token);
+  orgId: string,
+  params: string[],
+): Promise<Record<string, unknown>> {
+  const query = params.length
+    ? "?" + params.map((p) => encodeURIComponent(p) + "=1").join("&")
+    : "";
   const res = await fetch(
-    `https://claude.ai/api/organizations/${orgId}/usage`,
+    `https://claude.ai/api/organizations/${orgId}/usage${query}`,
     { headers: claudeHeaders(token) },
   );
   if (res.status === 401 || res.status === 403) {
@@ -122,6 +249,48 @@ export async function fetchClaudeUsage(
     throw new Error(`request failed: ${res.status} ${res.statusText}`);
   }
   return await res.json();
+}
+
+/**
+ * Fetch usage, including usage-limit resets when the account has them.
+ *
+ * If the remembered opt-in parameter no longer yields a resets block, probe
+ * once a day with every candidate parameter and remember whichever key comes
+ * back holding one. Probing is best-effort: its failures never fail the poll.
+ */
+export async function fetchClaudeUsage(
+  token: string,
+): Promise<ClaudeUsageResponse> {
+  const orgId = await resolveClaudeOrg(token);
+  const param = getClaudeResetsParam() || DEFAULT_RESETS_PARAM;
+  let usage = await requestClaudeUsage(token, orgId, [param]);
+  let found = findResetCredits(usage);
+
+  if (
+    !found && Date.now() - getClaudeResetsProbedAt() > RESETS_PROBE_INTERVAL_MS
+  ) {
+    setClaudeResetsProbedAt(Date.now());
+    const candidates = resetsProbeParams(usage);
+    if (candidates.length) {
+      try {
+        const probed = await requestClaudeUsage(token, orgId, candidates);
+        const hit = findResetCredits(probed);
+        if (hit) {
+          usage = probed;
+          found = hit;
+        }
+      } catch (e) {
+        console.warn("[aiuse] claude resets probe failed:", e);
+      }
+    }
+  }
+  if (found && found.key !== param) setClaudeResetsParam(found.key);
+
+  return {
+    ...(usage as unknown as ClaudeUsageResponse),
+    reset_credits: found?.credits ?? null,
+    dollar_allowances: findDollarAllowances(usage),
+  };
 }
 
 export async function fetchClaudePrepaidCredits(

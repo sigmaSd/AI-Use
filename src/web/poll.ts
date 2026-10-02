@@ -9,6 +9,7 @@
 import {
   ChatGPTAuthError,
   ChatGPTClient,
+  type ChatGPTResetCreditsResponse,
   type ChatGPTUsageResponse,
 } from "./providers/chatgpt.ts";
 import type { OCUsageResponse } from "./providers/opencode.ts";
@@ -44,7 +45,13 @@ export interface UsageSnapshot {
     prepaidCredits: PrepaidCredits | null;
     error: ProviderError | null;
   };
-  chatgpt: { usage: ChatGPTUsageResponse | null; error: ProviderError | null };
+  chatgpt: {
+    usage: ChatGPTUsageResponse | null;
+    resetCredits: ChatGPTResetCreditsResponse | null;
+    /** Why resetCredits is null, if its request failed. */
+    resetCreditsError: string | null;
+    error: ProviderError | null;
+  };
   opencode: { usage: OCUsageResponse | null; error: ProviderError | null };
   lastFetchedAt: string | null;
   revision: number;
@@ -55,6 +62,8 @@ const chatgptClient = new ChatGPTClient({ deviceId: crypto.randomUUID() });
 let latestClaudeUsage: ClaudeUsageResponse | null = null;
 let latestClaudePrepaid: PrepaidCredits | null = null;
 let latestChatGPTUsage: ChatGPTUsageResponse | null = null;
+let latestChatGPTResetCredits: ChatGPTResetCreditsResponse | null = null;
+let chatgptResetCreditsError: string | null = null;
 let latestOpenCodeUsage: OCUsageResponse | null = null;
 
 let claudeError: ProviderError | null = null;
@@ -90,7 +99,12 @@ export function snapshot(): UsageSnapshot {
       prepaidCredits: latestClaudePrepaid,
       error: claudeError,
     },
-    chatgpt: { usage: latestChatGPTUsage, error: chatgptError },
+    chatgpt: {
+      usage: latestChatGPTUsage,
+      resetCredits: latestChatGPTResetCredits,
+      resetCreditsError: chatgptResetCreditsError,
+      error: chatgptError,
+    },
     opencode: { usage: latestOpenCodeUsage, error: opencodeError },
     lastFetchedAt,
     revision: usageRevision,
@@ -139,6 +153,19 @@ async function pollOnce() {
       attemptedAnyProvider = true;
       try {
         latestChatGPTUsage = await chatgptClient.fetchUsage(chatgptSession);
+        // Only adds expiry dates to the resets wham/usage already counts, so
+        // a failure here must not fail the provider.
+        try {
+          latestChatGPTResetCredits = await chatgptClient.fetchResetCredits(
+            chatgptSession,
+            latestChatGPTUsage.account_id,
+          );
+          chatgptResetCreditsError = null;
+        } catch (e) {
+          latestChatGPTResetCredits = null;
+          chatgptResetCreditsError = e instanceof Error ? e.message : String(e);
+          console.warn("[aiuse] chatgpt reset credits failed:", e);
+        }
         authErrorCountChatGPT = 0;
         chatgptError = null;
         nextChatGPTPollAt = Date.now() + POLL_INTERVAL_MS;
@@ -265,6 +292,8 @@ export function clearClaudeState() {
 
 export function clearChatGPTState() {
   latestChatGPTUsage = null;
+  latestChatGPTResetCredits = null;
+  chatgptResetCreditsError = null;
   chatgptError = null;
   authErrorCountChatGPT = 0;
   nextChatGPTPollAt = 0;

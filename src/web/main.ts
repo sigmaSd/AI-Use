@@ -1,13 +1,7 @@
 /**
- * aiuse UI.
- *
- * Ported verbatim from the inline <script> that used to live in report.ts,
- * with one change: the four fetch('/api/*') calls now go through ./api.ts,
- * which exposes the same request/response shapes as plain function calls.
- * Everything below is DOM rendering and is untouched.
- *
- * Ported to TypeScript (typed DOM access, provider response types); the
- * rendering logic itself is unchanged from the ES5 original.
+ * Dashboard and connection UI shared by desktop and Android.
+ * Provider data comes from api.ts; compact overview rows and details sheets
+ * stay live as polling updates usage and reset countdowns.
  */
 
 import * as api from "./api.ts";
@@ -31,10 +25,10 @@ import { scanForTokens, shareConnections } from "./share/modal.ts";
 import {
   colorVar,
   fmtAgo,
-  fmtCountdownReal,
+  fmtCountdownCompact,
   fmtMinor,
   fmtTime,
-  fmtWindow,
+  fmtWindowCompact,
   statusWord,
 } from "./ui/format.ts";
 import {
@@ -68,6 +62,35 @@ function showScreen(name: string): void {
   byId("dashboard").style.display = (name === "dashboard") ? "block" : "none";
 }
 
+function openDetails(provider: string): void {
+  byId<HTMLDialogElement>(provider + "-details").showModal();
+}
+
+document.querySelectorAll<HTMLElement>("[data-details]").forEach((button) => {
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", button.dataset.details + "-details");
+  button.addEventListener("click", () => openDetails(button.dataset.details!));
+});
+document.querySelectorAll<HTMLDialogElement>(".details-sheet").forEach(
+  (sheet) => {
+    sheet.addEventListener("click", (event) => {
+      if (event.target !== sheet) return;
+      const rect = sheet.getBoundingClientRect();
+      if (
+        event.clientX < rect.left || event.clientX > rect.right ||
+        event.clientY < rect.top || event.clientY > rect.bottom
+      ) sheet.close();
+    });
+  },
+);
+byId("usage-help").addEventListener("click", (event) => {
+  event.preventDefault();
+  (event.currentTarget as HTMLElement).closest("details")?.removeAttribute(
+    "open",
+  );
+  openDetails("help");
+});
+
 function fillMeter(el: HTMLElement, pct: number, color: string): void {
   let fill = el.firstElementChild as HTMLElement | null;
   if (!fill) {
@@ -87,6 +110,9 @@ function applyStatus(elId: string, pct: number): void {
   const badge = byId(elId);
   badge.textContent = statusWord(pct);
   badge.style.color = colorVar(pct);
+  const panel = badge.closest(".panel");
+  const value = panel?.querySelector<HTMLElement>(".pct");
+  if (value) value.style.color = colorVar(pct);
 }
 
 // Resets store the absolute reset time (ISO string) for countdown calculation.
@@ -112,7 +138,6 @@ function updateProviderSections() {
   byId("reset-claude").style.display = hasClaude ? "" : "none";
   byId("reset-chatgpt").style.display = hasChatGPT ? "" : "none";
   byId("reset-opencode").style.display = hasOpenCode ? "" : "none";
-  if (!hasClaude && !hasChatGPT) byId("resets-section").style.display = "none";
 }
 
 // ---- error rendering ----
@@ -127,12 +152,14 @@ function renderProviderError(prefix: string, error: ProviderError): void {
   const badge = byId(prefix + "-badge");
   badge.textContent = "error";
   badge.className = "provider-badge err";
+  badge.title = "Provider error";
 }
 function clearProviderError(prefix: string): void {
   byId(prefix + "-error").style.display = "none";
   const badge = byId(prefix + "-badge");
   badge.textContent = "connected";
   badge.className = "provider-badge ok";
+  badge.title = "Connected";
 }
 
 // Dismiss buttons
@@ -210,6 +237,9 @@ function renderAllowances(allowances: DollarAllowance[]): void {
   const container = byId("claude-allowances");
   container.style.display = allowances.length ? "" : "none";
   container.innerHTML = "";
+  const details = byId("claude-allowance-details");
+  details.hidden = !allowances.length;
+  details.innerHTML = "";
   allowances.forEach(function (a) {
     const pct = a.utilization;
     const panel = document.createElement("div");
@@ -229,6 +259,7 @@ function renderAllowances(allowances: DollarAllowance[]): void {
 
     const pctEl = document.createElement("div");
     pctEl.className = "pct";
+    pctEl.style.color = a.locked_reason ? "var(--red)" : colorVar(pct);
     const used = a.used_dollars ?? a.limit_dollars * pct / 100;
     pctEl.textContent = "$" + used.toFixed(2);
     const of = document.createElement("small");
@@ -241,10 +272,10 @@ function renderAllowances(allowances: DollarAllowance[]): void {
 
     const countdown = document.createElement("div");
     countdown.className = "countdown";
-    countdown.appendChild(document.createTextNode("resets in "));
+    countdown.appendChild(document.createTextNode("in "));
     const cd = document.createElement("span");
     cd.setAttribute("data-until", a.resets_at);
-    cd.textContent = fmtCountdownReal(
+    cd.textContent = fmtCountdownCompact(
       new Date(a.resets_at).getTime() - Date.now(),
     );
     countdown.appendChild(cd);
@@ -264,7 +295,11 @@ function renderAllowances(allowances: DollarAllowance[]): void {
     panel.appendChild(pctEl);
     panel.appendChild(meter);
     panel.appendChild(countdown);
-    panel.appendChild(meta);
+    const detail = document.createElement("div");
+    detail.className = "panel";
+    detail.dataset.tag = allowanceLabel(a);
+    detail.appendChild(meta);
+    details.appendChild(detail);
     if (a.locked_reason) {
       const note = document.createElement("div");
       note.className = "reset-warning";
@@ -392,7 +427,9 @@ function appendChatGPTWindow(
   head.className = "row-head";
   const label = document.createElement("div");
   label.className = "label";
-  label.textContent = name + " · " + fmtWindow(win.limit_window_seconds);
+  label.textContent = name === "Included usage"
+    ? fmtWindowCompact(win.limit_window_seconds)
+    : name + " · " + fmtWindowCompact(win.limit_window_seconds);
   const status = document.createElement("div");
   status.className = "status";
   status.id = "status-" + key;
@@ -413,11 +450,11 @@ function appendChatGPTWindow(
   meter.id = "meter-" + key;
   const countdown = document.createElement("div");
   countdown.className = "countdown";
-  countdown.appendChild(document.createTextNode("resets in "));
+  countdown.appendChild(document.createTextNode("in "));
   const countdownValue = document.createElement("span");
   countdownValue.id = "cd-" + key;
   countdownValue.textContent = resetAt
-    ? fmtCountdownReal(new Date(resetAt).getTime() - Date.now())
+    ? fmtCountdownCompact(new Date(resetAt).getTime() - Date.now())
     : "--";
   countdown.appendChild(countdownValue);
 
@@ -426,6 +463,14 @@ function appendChatGPTWindow(
   panel.appendChild(meter);
   panel.appendChild(countdown);
   container.appendChild(panel);
+  const timing = document.createElement("div");
+  timing.className = "meta";
+  const timingLabel = document.createElement("span");
+  timingLabel.textContent = label.textContent;
+  const timingValue = document.createElement("b");
+  timingValue.textContent = resetAt ? fmtTime(resetAt) : "Not reported";
+  timing.append(timingLabel, timingValue);
+  byId("chatgpt-reset-times").appendChild(timing);
   buildMeter(meter.id, pct);
   applyStatus(status.id, pct);
 }
@@ -458,6 +503,17 @@ function renderChatGPTUsage(
   chatgptResetKeys = [];
   const container = byId("chatgpt-limits");
   container.innerHTML = "";
+  const extra = byId("chatgpt-extra-limits");
+  extra.innerHTML = "";
+  byId("chatgpt-reset-times").innerHTML = "";
+  // Keep secondary limits in details unless they need attention, or the
+  // account has no included usage to show in the overview.
+  const secondaryContainer = (limit: ChatGPTRateLimit | null | undefined) =>
+    !data.rate_limit?.primary_window && !data.rate_limit?.secondary_window ||
+      Number(limit?.primary_window?.used_percent || 0) >= 60 ||
+      Number(limit?.secondary_window?.used_percent || 0) >= 60
+      ? container
+      : extra;
   appendChatGPTRateLimit(
     container,
     "Included usage",
@@ -465,20 +521,24 @@ function renderChatGPTUsage(
     "plan limit",
   );
   appendChatGPTRateLimit(
-    container,
+    secondaryContainer(data.code_review_rate_limit),
     "Code review",
     data.code_review_rate_limit,
     "feature limit",
   );
   (data.additional_rate_limits || []).forEach(function (item) {
     appendChatGPTRateLimit(
-      container,
+      secondaryContainer(item.rate_limit),
       item.limit_name,
       item.rate_limit,
       "model limit",
     );
   });
 
+  extra.style.display = extra.childNodes.length ? "" : "none";
+  byId("chatgpt-reset-times").style.display = chatgptResetKeys.length
+    ? ""
+    : "none";
   if (container.childNodes.length === 0) {
     const empty = document.createElement("div");
     empty.className = "no-provider";
@@ -506,6 +566,7 @@ function renderOCWindow(prefix: string, win: OCUsageWindow): void {
   const now = Date.now();
   const resetsAt = new Date(now + win.resetInSec * 1000).toISOString();
   resets[prefix] = resetsAt;
+  byId("reset-" + prefix + "-time").textContent = fmtTime(resetsAt);
 }
 
 function renderOpenCodeUsage(
@@ -577,7 +638,7 @@ function renderResetCard(card: ResetCard): HTMLElement {
     expiry.appendChild(document.createTextNode("expires in "));
     const cd = document.createElement("b");
     cd.setAttribute("data-until", card.expiresAt);
-    cd.textContent = fmtCountdownReal(
+    cd.textContent = fmtCountdownCompact(
       new Date(card.expiresAt).getTime() - Date.now(),
     );
     expiry.appendChild(cd);
@@ -631,12 +692,52 @@ function renderResets(
       )
       : []),
   ];
-  byId("resets-section").style.display = cards.length ? "" : "none";
-  const list = byId("resets-list");
-  list.innerHTML = "";
-  cards.forEach(function (card) {
-    list.appendChild(renderResetCard(card));
-  });
+  for (const provider of ["claude", "chatgpt"] as const) {
+    const summaries = byId(provider + "-reset-summary");
+    const details = byId(provider + "-reset-details");
+    const providerCards = cards.filter((card) => card.provider === provider);
+    summaries.hidden = details.hidden = providerCards.length === 0;
+    details.replaceChildren();
+    providerCards.forEach((card, index) => {
+      // Keep the opener alive across polls so closing a sheet can restore focus.
+      const existing = summaries.children[index] as
+        | HTMLButtonElement
+        | undefined;
+      const summary = existing ?? document.createElement("button");
+      if (!existing) {
+        summary.setAttribute("aria-haspopup", "dialog");
+        summary.setAttribute("aria-controls", provider + "-details");
+        summary.addEventListener("click", () => openDetails(provider));
+        summaries.appendChild(summary);
+      }
+      summary.replaceChildren();
+      summary.className = "reset-summary " + card.urgency + " " +
+        card.adviceTone;
+      const count = document.createElement("strong");
+      count.textContent = card.left +
+        (card.left === 1 ? " free reset" : " free resets");
+      const expiry = document.createElement("span");
+      if (card.expiresAt) {
+        expiry.appendChild(document.createTextNode("expires in "));
+        const time = document.createElement("span");
+        time.dataset.until = card.expiresAt;
+        time.textContent = fmtCountdownCompact(
+          new Date(card.expiresAt).getTime() - Date.now(),
+        );
+        expiry.appendChild(time);
+      }
+      const chip = document.createElement("span");
+      chip.className = "reset-chip";
+      chip.textContent = card.warning
+        ? "Check details ›"
+        : expiryChip(card) + " ›";
+      summary.append(count, expiry, chip);
+      details.appendChild(renderResetCard(card));
+    });
+    while (summaries.childElementCount > providerCards.length) {
+      summaries.lastElementChild?.remove();
+    }
+  }
 }
 
 // ---- data fetching ----
@@ -672,6 +773,7 @@ function fetchUsageOnce() {
     );
     lastFetchedAt = body.lastFetchedAt;
     byId("updated-ago").textContent = fmtAgo(lastFetchedAt);
+    updateCountdowns();
     byId("stamp").textContent = lastFetchedAt
       ? ("last poll " + lastFetchedAt)
       : "";
@@ -944,53 +1046,53 @@ function checkStatusAndShow() {
   });
 }
 
-// ---- clock + countdowns ----
-setInterval(function () {
+// ---- countdowns ----
+function updateCountdowns(): void {
   const now = new Date();
-  byId("clock").textContent = now.toLocaleTimeString();
   if (resets.fiveHour) {
-    byId("cd-5h").textContent = fmtCountdownReal(
+    byId("cd-5h").textContent = fmtCountdownCompact(
       new Date(resets.fiveHour).getTime() - now.getTime(),
     );
   }
   if (resets.sevenDay) {
-    byId("cd-7d").textContent = fmtCountdownReal(
+    byId("cd-7d").textContent = fmtCountdownCompact(
       new Date(resets.sevenDay).getTime() - now.getTime(),
     );
   }
   chatgptResetKeys.forEach(function (key) {
     const el = byId("cd-" + key);
     if (el && resets[key]) {
-      el.textContent = fmtCountdownReal(
+      el.textContent = fmtCountdownCompact(
         new Date(resets[key]).getTime() - now.getTime(),
       );
     }
   });
   if (resets["oc-rolling"]) {
-    byId("cd-oc-rolling").textContent = fmtCountdownReal(
+    byId("cd-oc-rolling").textContent = fmtCountdownCompact(
       new Date(resets["oc-rolling"]).getTime() - now.getTime(),
     );
   }
   if (resets["oc-weekly"]) {
-    byId("cd-oc-weekly").textContent = fmtCountdownReal(
+    byId("cd-oc-weekly").textContent = fmtCountdownCompact(
       new Date(resets["oc-weekly"]).getTime() - now.getTime(),
     );
   }
   if (resets["oc-monthly"]) {
-    byId("cd-oc-monthly").textContent = fmtCountdownReal(
+    byId("cd-oc-monthly").textContent = fmtCountdownCompact(
       new Date(resets["oc-monthly"]).getTime() - now.getTime(),
     );
   }
   document.querySelectorAll<HTMLElement>("[data-until]").forEach(
     function (el) {
-      el.textContent = fmtCountdownReal(
+      el.textContent = fmtCountdownCompact(
         new Date(el.getAttribute("data-until") || "").getTime() -
           now.getTime(),
       );
     },
   );
   if (lastFetchedAt) byId("updated-ago").textContent = fmtAgo(lastFetchedAt);
-}, 1000);
+}
+setInterval(updateCountdowns, 1000);
 
 // ---- init ----
 // The desktop WebView gets a fresh origin (random port) every launch, so the

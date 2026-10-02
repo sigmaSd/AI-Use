@@ -2,11 +2,13 @@ import { assertEquals, assertMatch } from "@std/assert";
 import {
   colorVar,
   fmtAgo,
+  fmtCountdownCompact,
   fmtCountdownReal,
   fmtMinor,
   fmtMoney,
   fmtTime,
   fmtWindow,
+  fmtWindowCompact,
   statusWord,
 } from "./format.ts";
 
@@ -73,4 +75,24 @@ Deno.test("fmtWindow labels", () => {
   assertEquals(fmtWindow(86400), "1-day window");
   assertEquals(fmtWindow(3600), "1-hour window");
   assertEquals(fmtWindow(1800), "30m 0s window");
+});
+
+Deno.test("compact countdowns preserve reset boundaries without seconds", () => {
+  assertEquals(fmtCountdownCompact(-1), "now");
+  assertEquals(fmtCountdownCompact(0), "now");
+  assertEquals(fmtCountdownCompact(59_999), "<1m");
+  assertEquals(fmtCountdownCompact(60_000), "1m");
+  assertEquals(fmtCountdownCompact(3_700_000), "1h 1m");
+  assertEquals(fmtCountdownCompact(90_000_000), "1d 1h");
+  assertEquals(fmtCountdownCompact(NaN), "--");
+  assertEquals(fmtCountdownCompact(Infinity), "--");
+});
+
+Deno.test("compact window names distinguish provider periods", () => {
+  assertEquals(fmtWindowCompact(0), "Usage");
+  assertEquals(fmtWindowCompact(18_000), "5-hour");
+  assertEquals(fmtWindowCompact(604_800), "Weekly");
+  assertEquals(fmtWindowCompact(2_592_000), "Monthly");
+  assertEquals(fmtWindowCompact(1_209_600), "14-day");
+  assertEquals(fmtWindowCompact(1800), "30m");
 });

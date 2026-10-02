@@ -41,6 +41,28 @@ export function fmtCountdownReal(ms: number): string {
   return s + "s";
 }
 
+/** Two useful units, without a ticking seconds counter. */
+export function fmtCountdownCompact(ms: number): string {
+  if (!Number.isFinite(ms)) return "--";
+  if (ms <= 0) return "now";
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes === 0) return "<1m";
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days > 0) return days + "d " + hours + "h";
+  if (hours > 0) return hours + "h " + (minutes % 60) + "m";
+  return minutes + "m";
+}
+
+export function fmtWindowCompact(seconds: number): string {
+  if (seconds === 604800) return "Weekly";
+  if (seconds === 2592000) return "Monthly";
+  if (!seconds) return "Usage";
+  if (seconds % 86400 === 0) return (seconds / 86400) + "-day";
+  if (seconds % 3600 === 0) return (seconds / 3600) + "-hour";
+  return fmtCountdownCompact(seconds * 1000);
+}
+
 export function fmtAgo(iso: string | null): string {
   if (!iso) return "--";
   const sec = Math.max(

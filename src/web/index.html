@@ -67,7 +67,7 @@
       font-family: var(--sans);
       font-size: 14px;
       line-height: 1.45;
-      min-height: 100vh;
+      min-height: calc(100vh / var(--vh-scale, 1));
       -webkit-font-smoothing: antialiased;
     }
     body {
@@ -84,7 +84,7 @@
 
     /* ---------- key screen ---------- */
     #key-screen {
-      min-height: 100vh;
+      min-height: calc(100vh / var(--vh-scale, 1));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -232,6 +232,14 @@
       max-width: 1240px;
       margin: 0 auto;
     }
+    /* Sized to the connected providers so 1–2 cards stay card-shaped and
+       the topbar lines up with them, rather than bars stretched wide. */
+    #dashboard[data-providers="1"] .wrap {
+      max-width: 520px;
+    }
+    #dashboard[data-providers="2"] .wrap {
+      max-width: 900px;
+    }
     .topbar,
     .brand,
     .topbar-right,
@@ -266,7 +274,8 @@
     }
     .providers-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      /* fills the row with however many providers are connected, up to 3 */
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 12px;
       align-items: start;
     }
@@ -526,6 +535,32 @@
     .reset-link:hover {
       background: var(--panel-2);
     }
+    .zoom-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 4px 4px 10px;
+      color: var(--text);
+    }
+    .zoom-row #zoom-label {
+      flex: 1;
+      cursor: pointer;
+      color: var(--dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .zoom-row button {
+      width: 36px;
+      height: 36px;
+      border-radius: 7px;
+      border: 1px solid var(--grid);
+      background: transparent;
+      color: var(--text);
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .zoom-row button:hover {
+      background: var(--panel-2);
+    }
     .details-sheet {
       color: var(--text);
       background: var(--bg);
@@ -533,7 +568,7 @@
       border-radius: 16px;
       padding: 0;
       width: min(520px, calc(100% - 32px));
-      max-height: 85dvh;
+      max-height: calc(85dvh / var(--vh-scale, 1));
       box-shadow: var(--shadow);
     }
     .details-sheet::backdrop {
@@ -720,11 +755,6 @@
       color: var(--dim);
       overflow-wrap: anywhere;
     }
-    @media (max-width: 980px) {
-      .providers-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
     @media (max-width: 660px) {
       #dashboard {
         padding: 8px 10px 12px;
@@ -747,7 +777,7 @@
         width: 100%;
         max-width: 100%;
         margin: auto 0 0;
-        max-height: 85dvh;
+        max-height: calc(85dvh / var(--vh-scale, 1));
         border-radius: 16px 16px 0 0;
         padding-bottom: env(safe-area-inset-bottom);
       }
@@ -1117,6 +1147,12 @@
                 <a class="reset-link" id="reset-claude">reset claude</a>
                 <a class="reset-link" id="reset-chatgpt">reset chatgpt</a>
                 <a class="reset-link" id="reset-opencode">reset opencode</a>
+                <div class="zoom-row" id="zoom-row" style="display:none">
+                  <span id="zoom-label"
+                    title="Reset to auto (Ctrl+0)">100%</span>
+                  <button id="zoom-out" title="Zoom out (Ctrl+−)">−</button>
+                  <button id="zoom-in" title="Zoom in (Ctrl++)">+</button>
+                </div>
               </div>
             </details>
           </div>

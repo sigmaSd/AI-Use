@@ -83,6 +83,7 @@ function json(body: unknown, status = 200): Response {
 
 const CODE_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const TOKEN_PROVIDER_RE = /^(claude|chatgpt|opencode|all)$/;
+const ZOOM_KEY = "ui_zoom";
 
 async function handlePairPublish(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null) as
@@ -172,6 +173,28 @@ async function handle(req: Request): Promise<Response> {
     clearPersistedTokens(
       provider as "claude" | "chatgpt" | "opencode" | "all",
     );
+    return json({ ok: true });
+  }
+
+  // Desktop UI zoom (see web/ui/zoom.ts). Same restart problem as tokens:
+  // page localStorage is lost with each launch's fresh origin.
+  if (url.pathname === "/api/zoom" && req.method === "GET") {
+    const z = Number(localStorage.getItem(ZOOM_KEY));
+    return json({ zoom: z > 0 ? z : null });
+  }
+
+  if (url.pathname === "/api/zoom" && req.method === "PUT") {
+    const body = await req.json().catch(() => null) as
+      | { zoom?: unknown }
+      | null;
+    const z = body?.zoom;
+    if (z === null) {
+      localStorage.removeItem(ZOOM_KEY);
+    } else if (typeof z === "number" && z >= 0.5 && z <= 3) {
+      localStorage.setItem(ZOOM_KEY, String(z));
+    } else {
+      return json({ ok: false, error: "bad request" }, 400);
+    }
     return json({ ok: true });
   }
 

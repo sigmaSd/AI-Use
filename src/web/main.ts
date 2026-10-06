@@ -36,6 +36,7 @@ import {
   claudeResetCards,
   type ResetCard,
 } from "./ui/resets.ts";
+import { initZoom } from "./ui/zoom.ts";
 
 api.init();
 
@@ -138,6 +139,10 @@ function updateProviderSections() {
   byId("reset-claude").style.display = hasClaude ? "" : "none";
   byId("reset-chatgpt").style.display = hasChatGPT ? "" : "none";
   byId("reset-opencode").style.display = hasOpenCode ? "" : "none";
+  // index.html narrows the layout to fit 1–2 cards instead of stretching them.
+  byId("dashboard").dataset.providers = String(
+    Number(hasClaude) + Number(hasChatGPT) + Number(hasOpenCode),
+  );
 }
 
 // ---- error rendering ----
@@ -989,6 +994,14 @@ byId("open-scan").addEventListener("click", function () {
 if (isDesktop) {
   byId("open-scan").style.display = "none";
   byId("scan-or-divider").style.display = "none";
+  // Phone-tuned px sizes read small on a 1× monitor; see ui/zoom.ts.
+  byId("zoom-row").style.display = "";
+  initZoom({
+    label: byId("zoom-label"),
+    zoomIn: byId("zoom-in"),
+    zoomOut: byId("zoom-out"),
+    reset: byId("zoom-label"),
+  });
 } else {
   // ...and the reverse: the phone is the receiving end, so "share to phone"
   // has nowhere to go from here.

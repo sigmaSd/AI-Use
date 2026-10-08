@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "aiuse-dev",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["task", "dev"],
+      "port": 8000
+    }
+  ]
+}

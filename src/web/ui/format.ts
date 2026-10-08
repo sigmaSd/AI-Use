@@ -28,6 +28,17 @@ export function fmtTime(iso: string): string {
   });
 }
 
+/** Calendar date, with the year only when it isn't this year's. */
+export function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+  });
+}
+
 export function fmtCountdownReal(ms: number): string {
   if (ms <= 0) return "now";
   const totalSec = Math.floor(ms / 1000);

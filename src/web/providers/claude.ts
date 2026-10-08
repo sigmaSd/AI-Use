@@ -293,6 +293,40 @@ export async function fetchClaudeUsage(
   };
 }
 
+/**
+ * Billing state from `subscription_details`. Trimmed to the fields the
+ * dashboard reads; `plan_ending_at` is only set once the plan is cancelled.
+ */
+export interface ClaudeSubscriptionDetails {
+  status?: string | null;
+  billing_interval?: string | null;
+  next_charge_at?: string | null;
+  next_charge_date?: string | null;
+  plan_ending_at?: string | null;
+  plan_ending_before?: string | null;
+  trial_end_ts?: string | number | null;
+  payment_paused_until?: string | null;
+}
+
+/** Null when the org has no paid subscription. */
+export async function fetchClaudeSubscription(
+  token: string,
+): Promise<ClaudeSubscriptionDetails | null> {
+  const orgId = await resolveClaudeOrg(token);
+  const res = await fetch(
+    `https://claude.ai/api/organizations/${orgId}/subscription_details`,
+    { headers: claudeHeaders(token) },
+  );
+  if (res.status === 404) return null;
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthError(`auth failed: ${res.status}`);
+  }
+  if (!res.ok) {
+    throw new Error(`request failed: ${res.status} ${res.statusText}`);
+  }
+  return await res.json();
+}
+
 export async function fetchClaudePrepaidCredits(
   token: string,
 ): Promise<PrepaidCredits> {

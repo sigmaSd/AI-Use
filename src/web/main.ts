@@ -26,6 +26,7 @@ import {
   colorVar,
   fmtAgo,
   fmtCountdownCompact,
+  fmtDate,
   fmtMinor,
   fmtTime,
   fmtWindowCompact,
@@ -36,6 +37,12 @@ import {
   claudeResetCards,
   type ResetCard,
 } from "./ui/resets.ts";
+import {
+  chatgptSubscription,
+  claudeSubscription,
+  subscriptionVerb,
+  type SubscriptionView,
+} from "./ui/subscription.ts";
 import { initZoom } from "./ui/zoom.ts";
 
 api.init();
@@ -745,6 +752,73 @@ function renderResets(
   }
 }
 
+// ---- subscription renewal / end ----
+function renderSubscription(
+  provider: "claude" | "chatgpt",
+  sub: SubscriptionView | null,
+): void {
+  const summary = byId(provider + "-sub-summary");
+  const details = byId(provider + "-sub-details");
+  summary.hidden = details.hidden = !sub;
+  if (!sub) return;
+  // Rebuild only on change: swapping nodes mid-press can swallow the click.
+  const key = JSON.stringify(sub);
+  if (summary.dataset.key === key) return;
+  summary.dataset.key = key;
+
+  let button = summary.firstElementChild as HTMLButtonElement | null;
+  if (!button) {
+    button = document.createElement("button");
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-controls", provider + "-details");
+    button.addEventListener("click", () => openDetails(provider));
+    summary.appendChild(button);
+  }
+  button.className = "reset-summary " + sub.urgency;
+  const title = document.createElement("strong");
+  title.textContent = subscriptionVerb(sub.kind) + " " + fmtDate(sub.at);
+  const when = document.createElement("span");
+  when.appendChild(document.createTextNode("in "));
+  const cd = document.createElement("span");
+  cd.dataset.until = sub.at;
+  cd.textContent = fmtCountdownCompact(
+    new Date(sub.at).getTime() - Date.now(),
+  );
+  when.appendChild(cd);
+  const chip = document.createElement("span");
+  chip.className = "reset-chip";
+  chip.textContent = sub.warning
+    ? "Check billing ›"
+    : (sub.kind === "renews" ? sub.interval || "auto-renew" : "won't renew") +
+      " ›";
+  button.replaceChildren(title, when, chip);
+
+  const rows: [string, string][] = [
+    [subscriptionVerb(sub.kind).toLowerCase(), fmtTime(sub.at)],
+  ];
+  if (sub.interval) rows.push(["billing", sub.interval]);
+  rows.push([
+    "auto-renew",
+    sub.kind === "renews" ? "on" : "off",
+  ]);
+  details.replaceChildren(...rows.map(([k, v]) => {
+    const row = document.createElement("div");
+    row.className = "meta";
+    const key = document.createElement("span");
+    key.textContent = k;
+    const val = document.createElement("b");
+    val.textContent = v;
+    row.append(key, val);
+    return row;
+  }));
+  if (sub.warning) {
+    const warning = document.createElement("div");
+    warning.className = "reset-warning";
+    warning.textContent = sub.warning;
+    details.appendChild(warning);
+  }
+}
+
 // ---- data fetching ----
 function fetchUsageOnce() {
   // Reading poll state is synchronous now, so responses can no longer
@@ -775,6 +849,16 @@ function fetchUsageOnce() {
       body.chatgpt?.usage ?? null,
       body.chatgpt?.resetCredits ?? null,
       body.chatgpt?.resetCreditsError ?? null,
+    );
+    renderSubscription(
+      "claude",
+      hasClaude ? claudeSubscription(body.claude?.subscription ?? null) : null,
+    );
+    renderSubscription(
+      "chatgpt",
+      hasChatGPT
+        ? chatgptSubscription(body.chatgpt?.subscription ?? null)
+        : null,
     );
     lastFetchedAt = body.lastFetchedAt;
     byId("updated-ago").textContent = fmtAgo(lastFetchedAt);

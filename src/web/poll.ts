@@ -7,6 +7,7 @@
  */
 
 import {
+  type ChatGPTAccountCheck,
   ChatGPTAuthError,
   ChatGPTClient,
   type ChatGPTResetCreditsResponse,
@@ -16,8 +17,10 @@ import type { OCUsageResponse } from "./providers/opencode.ts";
 import { fetchOpenCodeUsage } from "./providers/opencode_client.ts";
 import {
   AuthError,
+  type ClaudeSubscriptionDetails,
   type ClaudeUsageResponse,
   fetchClaudePrepaidCredits,
+  fetchClaudeSubscription,
   fetchClaudeUsage,
   type PrepaidCredits,
 } from "./providers/claude.ts";
@@ -33,6 +36,8 @@ const AUTH_RETRY_BASE_MS = 30_000;
 const AUTH_RETRY_MAX_MS = 10 * 60_000;
 const AUTH_RETRY_JITTER_MS = 5_000;
 const AUTH_ERROR_DISPLAY_THRESHOLD = 2;
+// Renewal dates move once a billing cycle; no need to ask every poll.
+const SUBSCRIPTION_INTERVAL_MS = 60 * 60_000;
 
 export interface ProviderError {
   kind: "auth" | "network";
@@ -43,6 +48,7 @@ export interface UsageSnapshot {
   claude: {
     usage: ClaudeUsageResponse | null;
     prepaidCredits: PrepaidCredits | null;
+    subscription: ClaudeSubscriptionDetails | null;
     error: ProviderError | null;
   };
   chatgpt: {
@@ -50,6 +56,7 @@ export interface UsageSnapshot {
     resetCredits: ChatGPTResetCreditsResponse | null;
     /** Why resetCredits is null, if its request failed. */
     resetCreditsError: string | null;
+    subscription: ChatGPTAccountCheck | null;
     error: ProviderError | null;
   };
   opencode: { usage: OCUsageResponse | null; error: ProviderError | null };
@@ -65,6 +72,10 @@ let latestChatGPTUsage: ChatGPTUsageResponse | null = null;
 let latestChatGPTResetCredits: ChatGPTResetCreditsResponse | null = null;
 let chatgptResetCreditsError: string | null = null;
 let latestOpenCodeUsage: OCUsageResponse | null = null;
+let latestClaudeSubscription: ClaudeSubscriptionDetails | null = null;
+let latestChatGPTSubscription: ChatGPTAccountCheck | null = null;
+let nextClaudeSubscriptionAt = 0;
+let nextChatGPTSubscriptionAt = 0;
 
 let claudeError: ProviderError | null = null;
 let chatgptError: ProviderError | null = null;
@@ -97,12 +108,14 @@ export function snapshot(): UsageSnapshot {
     claude: {
       usage: latestClaudeUsage,
       prepaidCredits: latestClaudePrepaid,
+      subscription: latestClaudeSubscription,
       error: claudeError,
     },
     chatgpt: {
       usage: latestChatGPTUsage,
       resetCredits: latestChatGPTResetCredits,
       resetCreditsError: chatgptResetCreditsError,
+      subscription: latestChatGPTSubscription,
       error: chatgptError,
     },
     opencode: { usage: latestOpenCodeUsage, error: opencodeError },
@@ -166,6 +179,18 @@ async function pollOnce() {
           chatgptResetCreditsError = e instanceof Error ? e.message : String(e);
           console.warn("[aiuse] chatgpt reset credits failed:", e);
         }
+        // Renewal date is extra too: keep the last one on failure.
+        if (Date.now() >= nextChatGPTSubscriptionAt) {
+          nextChatGPTSubscriptionAt = Date.now() + SUBSCRIPTION_INTERVAL_MS;
+          try {
+            latestChatGPTSubscription = await chatgptClient.fetchAccountCheck(
+              chatgptSession,
+              latestChatGPTUsage.account_id,
+            );
+          } catch (e) {
+            console.warn("[aiuse] chatgpt subscription failed:", e);
+          }
+        }
         authErrorCountChatGPT = 0;
         chatgptError = null;
         nextChatGPTPollAt = Date.now() + POLL_INTERVAL_MS;
@@ -197,6 +222,16 @@ async function pollOnce() {
       try {
         latestClaudeUsage = await fetchClaudeUsage(claudeToken);
         latestClaudePrepaid = await fetchClaudePrepaidCredits(claudeToken);
+        if (Date.now() >= nextClaudeSubscriptionAt) {
+          nextClaudeSubscriptionAt = Date.now() + SUBSCRIPTION_INTERVAL_MS;
+          try {
+            latestClaudeSubscription = await fetchClaudeSubscription(
+              claudeToken,
+            );
+          } catch (e) {
+            console.warn("[aiuse] claude subscription failed:", e);
+          }
+        }
         authErrorCountClaude = 0;
         claudeError = null;
         nextClaudePollAt = Date.now() + POLL_INTERVAL_MS;
@@ -285,6 +320,8 @@ export function bumpRevision() {
 export function clearClaudeState() {
   latestClaudeUsage = null;
   latestClaudePrepaid = null;
+  latestClaudeSubscription = null;
+  nextClaudeSubscriptionAt = 0;
   claudeError = null;
   authErrorCountClaude = 0;
   nextClaudePollAt = 0;
@@ -294,6 +331,8 @@ export function clearChatGPTState() {
   latestChatGPTUsage = null;
   latestChatGPTResetCredits = null;
   chatgptResetCreditsError = null;
+  latestChatGPTSubscription = null;
+  nextChatGPTSubscriptionAt = 0;
   chatgptError = null;
   authErrorCountChatGPT = 0;
   nextChatGPTPollAt = 0;

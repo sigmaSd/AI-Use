@@ -2,6 +2,7 @@ const SESSION_URL = "https://chatgpt.com/api/auth/session";
 const BACKEND_URL = "https://chatgpt.com";
 const USAGE_PATH = "/backend-api/wham/usage";
 const RESET_CREDITS_PATH = "/backend-api/wham/rate-limit-reset-credits";
+const ACCOUNTS_CHECK_PATH = "/backend-api/accounts/check/v4-2023-04-27";
 const ACCESS_TOKEN_FALLBACK_TTL_MS = 5 * 60_000;
 const ACCESS_TOKEN_EXPIRY_SKEW_MS = 30_000;
 
@@ -64,6 +65,29 @@ export interface ChatGPTResetCredit {
 export interface ChatGPTResetCreditsResponse {
   credits?: ChatGPTResetCredit[];
   available_count?: number;
+}
+
+/** Billing state of one account, from accounts/check. */
+export interface ChatGPTEntitlement {
+  has_active_subscription?: boolean;
+  subscription_plan?: string | null;
+  /** ISO string or unix seconds; both have been seen in the wild. */
+  expires_at?: string | number | null;
+  renews_at?: string | number | null;
+  cancels_at?: string | number | null;
+  billing_period?: string | null;
+  is_delinquent?: boolean;
+  grace_period_end_timestamp?: string | number | null;
+}
+
+export interface ChatGPTAccountCheck {
+  entitlement?: ChatGPTEntitlement | null;
+  last_active_subscription?: { will_renew?: boolean } | null;
+}
+
+interface AccountsCheckResponse {
+  accounts?: Record<string, ChatGPTAccountCheck>;
+  account_ordering?: string[];
 }
 
 export class ChatGPTAuthError extends Error {
@@ -283,5 +307,24 @@ export class ChatGPTClient {
     const headers: Record<string, string> = { "originator": "Codex Browser" };
     if (accountId) headers["ChatGPT-Account-Id"] = accountId;
     return await this.getBackend(session, RESET_CREDITS_PATH, headers);
+  }
+
+  /**
+   * Subscription renewal/expiry for `accountId` (wham/usage's
+   * `account_id`), falling back to the first account listed.
+   */
+  async fetchAccountCheck(
+    session: ChatGPTSession,
+    accountId?: string,
+  ): Promise<ChatGPTAccountCheck | null> {
+    const body = await this.getBackend<AccountsCheckResponse>(
+      session,
+      ACCOUNTS_CHECK_PATH,
+    );
+    const accounts = body.accounts ?? {};
+    const id = accountId && accounts[accountId]
+      ? accountId
+      : body.account_ordering?.[0];
+    return (id && accounts[id]) || null;
   }
 }

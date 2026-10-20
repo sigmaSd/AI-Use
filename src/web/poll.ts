@@ -11,7 +11,9 @@ import {
   ChatGPTAuthError,
   ChatGPTClient,
   type ChatGPTResetCreditsResponse,
+  type ChatGPTSession,
   type ChatGPTUsageResponse,
+  sessionCacheKey,
 } from "./providers/chatgpt.ts";
 import type { OCUsageResponse } from "./providers/opencode.ts";
 import { fetchOpenCodeUsage } from "./providers/opencode_client.ts";
@@ -29,7 +31,10 @@ import {
   getClaudeToken,
   getOpenCodeToken,
   hasChatGPTSession,
+  setChatGPTSessionSingle,
+  setChatGPTSessionSplit,
 } from "./store.ts";
+import { saveBackendTokens } from "./backend_tokens.ts";
 
 const POLL_INTERVAL_MS = 30_000;
 const AUTH_RETRY_BASE_MS = 30_000;
@@ -64,7 +69,33 @@ export interface UsageSnapshot {
   revision: number;
 }
 
-const chatgptClient = new ChatGPTClient({ deviceId: crypto.randomUUID() });
+/**
+ * Stores the session cookie ChatGPT re-issued in place of the one it
+ * replaced, so the app's copy keeps working instead of going stale.
+ */
+export function persistRotatedChatGPTSession(
+  from: ChatGPTSession,
+  to: ChatGPTSession,
+): void {
+  const stored = getChatGPTSession();
+  // A reconnect landed while the old session was refreshing: it wins.
+  if (!stored || sessionCacheKey(stored) !== sessionCacheKey(from)) return;
+  if (to.kind === "single") {
+    setChatGPTSessionSingle(to.token);
+    saveBackendTokens({ chatgptSessionToken: to.token });
+  } else {
+    setChatGPTSessionSplit(to.token0, to.token1);
+    saveBackendTokens({
+      chatgptSession0: to.token0,
+      chatgptSession1: to.token1,
+    });
+  }
+}
+
+const chatgptClient = new ChatGPTClient({
+  deviceId: crypto.randomUUID(),
+  onSessionRotated: persistRotatedChatGPTSession,
+});
 
 let latestClaudeUsage: ClaudeUsageResponse | null = null;
 let latestClaudePrepaid: PrepaidCredits | null = null;

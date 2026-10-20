@@ -1,10 +1,14 @@
 const SESSION_URL = "https://chatgpt.com/api/auth/session";
+const SESSION_COOKIE = "__Secure-next-auth.session-token";
 const BACKEND_URL = "https://chatgpt.com";
 const USAGE_PATH = "/backend-api/wham/usage";
 const RESET_CREDITS_PATH = "/backend-api/wham/rate-limit-reset-credits";
 const ACCOUNTS_CHECK_PATH = "/backend-api/accounts/check/v4-2023-04-27";
 const ACCESS_TOKEN_FALLBACK_TTL_MS = 5 * 60_000;
 const ACCESS_TOKEN_EXPIRY_SKEW_MS = 30_000;
+// Stale sessions still redirected to the rotated one. Only the pre-rotation
+// copy a single poll holds matters, so a few cover forced refreshes too.
+const MAX_ROTATED_FROM = 4;
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0";
@@ -111,16 +115,82 @@ export type ChatGPTSession =
 
 export function sessionCookieHeader(session: ChatGPTSession): string {
   if (session.kind === "single") {
-    return `__Secure-next-auth.session-token=${session.token}`;
+    return `${SESSION_COOKIE}=${session.token}`;
   }
-  return `__Secure-next-auth.session-token.0=${session.token0}; ` +
-    `__Secure-next-auth.session-token.1=${session.token1}`;
+  return `${SESSION_COOKIE}.0=${session.token0}; ` +
+    `${SESSION_COOKIE}.1=${session.token1}`;
 }
 
 export function sessionCacheKey(session: ChatGPTSession): string {
   return session.kind === "single"
     ? `single\u0000${session.token}`
     : `split\u0000${session.token0}\u0000${session.token1}`;
+}
+
+/** Whether a Set-Cookie line removes its cookie rather than setting it. */
+function isCookieDeletion(value: string, attrs: string[], now: number) {
+  if (!value) return true;
+  for (const attr of attrs) {
+    const eq = attr.indexOf("=");
+    if (eq < 0) continue;
+    const name = attr.slice(0, eq).trim().toLowerCase();
+    const v = attr.slice(eq + 1).trim();
+    // Max-Age wins over Expires (RFC 6265 §5.3).
+    if (name === "max-age" && /^-?\d+$/.test(v)) return Number(v) <= 0;
+  }
+  for (const attr of attrs) {
+    const eq = attr.indexOf("=");
+    if (eq < 0 || attr.slice(0, eq).trim().toLowerCase() !== "expires") {
+      continue;
+    }
+    const at = Date.parse(attr.slice(eq + 1).trim());
+    if (!Number.isNaN(at)) return at <= now;
+  }
+  return false;
+}
+
+/**
+ * The session that `setCookies` (from /api/auth/session) rotate `current`
+ * to, or null when they leave it as it is.
+ *
+ * ChatGPT re-issues the session cookie on that endpoint, and the copy the
+ * user pasted eventually stops yielding usable access tokens, so the newest
+ * one must be kept. Either shape can replace either shape. Anything not
+ * cleanly one of them — only deletions, a lone chunk, or a third chunk this
+ * app cannot store — is ignored rather than risk replacing a working session
+ * with a broken one.
+ */
+export function rotatedSession(
+  current: ChatGPTSession,
+  setCookies: string[],
+  now: number,
+): ChatGPTSession | null {
+  const live = new Map<string, string>();
+  for (const line of setCookies) {
+    const [pair, ...attrs] = line.split(";");
+    const eq = pair.indexOf("=");
+    if (eq < 0) continue;
+    const name = pair.slice(0, eq).trim();
+    if (name !== SESSION_COOKIE && !name.startsWith(`${SESSION_COOKIE}.`)) {
+      continue;
+    }
+    const value = pair.slice(eq + 1).trim();
+    if (isCookieDeletion(value, attrs, now)) live.delete(name);
+    else live.set(name, value);
+  }
+
+  const single = live.get(SESSION_COOKIE);
+  const part0 = live.get(`${SESSION_COOKIE}.0`);
+  const part1 = live.get(`${SESSION_COOKIE}.1`);
+  let next: ChatGPTSession;
+  if (single && live.size === 1) {
+    next = { kind: "single", token: single };
+  } else if (part0 && part1 && live.size === 2) {
+    next = { kind: "split", token0: part0, token1: part1 };
+  } else {
+    return null;
+  }
+  return sessionCacheKey(next) === sessionCacheKey(current) ? null : next;
 }
 
 interface CachedAccessToken {
@@ -134,6 +204,12 @@ export interface ChatGPTClientOptions {
   deviceId: string;
   now?: () => number;
   userAgent?: string;
+  /**
+   * Called when /api/auth/session re-issues the session cookie, so the
+   * caller can persist `to` in place of `from`. The client already uses
+   * `to` from then on, even when handed `from` again.
+   */
+  onSessionRotated?: (from: ChatGPTSession, to: ChatGPTSession) => void;
 }
 
 function sessionKey(session: ChatGPTSession): string {
@@ -162,14 +238,40 @@ export class ChatGPTClient {
   private readonly deviceId: string;
   private readonly now: () => number;
   private readonly userAgent: string;
+  private readonly onSessionRotated?: (
+    from: ChatGPTSession,
+    to: ChatGPTSession,
+  ) => void;
   private cachedAccessToken: CachedAccessToken | null = null;
   private refreshPromise: Promise<string> | null = null;
+  // Callers holding a pre-rotation session (e.g. the rest of one poll) are
+  // redirected to the rotated one.
+  private rotation: { fromKeys: string[]; to: ChatGPTSession } | null = null;
 
   constructor(options: ChatGPTClientOptions) {
     this.fetchFn = options.fetchFn ?? fetch;
     this.deviceId = options.deviceId;
     this.now = options.now ?? Date.now;
     this.userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
+    this.onSessionRotated = options.onSessionRotated;
+  }
+
+  private currentSession(session: ChatGPTSession): ChatGPTSession {
+    const rotation = this.rotation;
+    return rotation?.fromKeys.includes(sessionKey(session))
+      ? rotation.to
+      : session;
+  }
+
+  private recordRotation(fromKey: string, to: ChatGPTSession): void {
+    const prev = this.rotation;
+    const chained = prev && sessionKey(prev.to) === fromKey
+      ? prev.fromKeys
+      : [];
+    this.rotation = {
+      fromKeys: [...chained, fromKey].slice(-MAX_ROTATED_FROM),
+      to,
+    };
   }
 
   clearAccessToken(): void {
@@ -213,10 +315,21 @@ export class ChatGPTClient {
       throw new ChatGPTAuthError("session refresh returned no access token");
     }
 
+    // getSetCookie is missing where a webview proxy cannot pass cookies on.
+    const rotated = rotatedSession(
+      session,
+      res.headers.getSetCookie?.() ?? [],
+      this.now(),
+    );
+    if (rotated) {
+      this.recordRotation(key, rotated);
+      this.onSessionRotated?.(session, rotated);
+    }
+
     const expiresAt = decodeJwtExpiry(body.accessToken) ??
       (this.now() + ACCESS_TOKEN_FALLBACK_TTL_MS);
     this.cachedAccessToken = {
-      sessionKey: key,
+      sessionKey: rotated ? sessionKey(rotated) : key,
       value: body.accessToken,
       expiresAt,
     };
@@ -224,9 +337,10 @@ export class ChatGPTClient {
   }
 
   private async resolveAccessToken(
-    session: ChatGPTSession,
+    requested: ChatGPTSession,
     forceRefresh = false,
   ): Promise<string> {
+    const session = this.currentSession(requested);
     const key = sessionKey(session);
     if (!forceRefresh) {
       const cached = this.getCachedAccessToken(key);

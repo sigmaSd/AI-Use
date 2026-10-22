@@ -15,6 +15,7 @@ import {
   setClaudeResetsParam,
   setClaudeResetsProbedAt,
 } from "../store.ts";
+import { requestSignal } from "./timeout.ts";
 
 export class AuthError extends Error {}
 
@@ -174,6 +175,7 @@ async function resolveClaudeOrg(token: string): Promise<string> {
 
   const res = await fetch("https://claude.ai/api/organizations", {
     headers: claudeHeaders(token),
+    signal: requestSignal(),
   });
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed while resolving org id: ${res.status}`);
@@ -240,7 +242,7 @@ async function requestClaudeUsage(
     : "";
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/usage${query}`,
-    { headers: claudeHeaders(token) },
+    { headers: claudeHeaders(token), signal: requestSignal() },
   );
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed: ${res.status}`);
@@ -315,7 +317,7 @@ export async function fetchClaudeSubscription(
   const orgId = await resolveClaudeOrg(token);
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/subscription_details`,
-    { headers: claudeHeaders(token) },
+    { headers: claudeHeaders(token), signal: requestSignal() },
   );
   if (res.status === 404) return null;
   if (res.status === 401 || res.status === 403) {
@@ -333,7 +335,7 @@ export async function fetchClaudePrepaidCredits(
   const orgId = await resolveClaudeOrg(token);
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
-    { headers: claudeHeaders(token) },
+    { headers: claudeHeaders(token), signal: requestSignal() },
   );
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed: ${res.status}`);

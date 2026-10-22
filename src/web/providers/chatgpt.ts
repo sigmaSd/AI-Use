@@ -1,3 +1,5 @@
+import { requestSignal } from "./timeout.ts";
+
 const SESSION_URL = "https://chatgpt.com/api/auth/session";
 const SESSION_COOKIE = "__Secure-next-auth.session-token";
 const BACKEND_URL = "https://chatgpt.com";
@@ -299,6 +301,7 @@ export class ChatGPTClient {
         "Cookie": cookie,
         "User-Agent": this.userAgent,
       },
+      signal: requestSignal(),
     });
 
     if (res.status === 401 || res.status === 403) {
@@ -375,6 +378,7 @@ export class ChatGPTClient {
         "User-Agent": this.userAgent,
         ...extraHeaders,
       },
+      signal: requestSignal(),
     });
   }
 

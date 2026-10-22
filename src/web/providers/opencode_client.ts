@@ -8,6 +8,7 @@
 import { getOpenCodeWorkspace } from "../store.ts";
 import { type OCUsageResponse, parseOpenCodeUsage } from "./opencode.ts";
 import { AuthError } from "./claude.ts";
+import { requestSignal } from "./timeout.ts";
 
 function opencodeHeaders(auth: string): Record<string, string> {
   const cleanAuth = auth.startsWith("auth=") ? auth.slice(5) : auth;
@@ -44,7 +45,7 @@ export async function fetchOpenCodeUsage(
   const wsId = resolveOpenCodeWorkspace(auth);
   const res = await fetch(
     `https://opencode.ai/workspace/${wsId}/go`,
-    { headers: opencodeHeaders(auth) },
+    { headers: opencodeHeaders(auth), signal: requestSignal() },
   );
 
   console.error(

@@ -1008,7 +1008,7 @@ buttonById("opencode-connect").addEventListener("click", function () {
   const token = inputById("opencode-key-input").value.trim();
   const wsId = inputById("opencode-workspace-input").value.trim();
   if (!token) {
-    byId("opencode-key-error").textContent = "Paste the auth cookie first.";
+    byId("opencode-key-error").textContent = "Paste the session cookie first.";
     return;
   }
   if (!wsId) {

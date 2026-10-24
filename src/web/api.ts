@@ -85,7 +85,7 @@ export function setTokens(body: TokenRequest): TokenResponse {
   let chatgptSessionToken = body.chatgptSessionToken?.trim();
   let chatgptSession0 = body.chatgptSession0?.trim();
   let chatgptSession1 = body.chatgptSession1?.trim();
-  let opencodeTok = body.opencodeToken?.trim();
+  const opencodeTok = body.opencodeToken?.trim();
   const opencodeWsId = body.opencodeWorkspaceId?.trim();
 
   // Strip accidental cookie-name prefixes
@@ -103,13 +103,10 @@ export function setTokens(body: TokenRequest): TokenResponse {
   chatgptSessionToken = chatgpt.single;
   chatgptSession0 = chatgpt.part0;
   chatgptSession1 = chatgpt.part1;
-  if (opencodeTok && opencodeTok.startsWith("auth=")) {
-    opencodeTok = opencodeTok.slice(5);
-  }
-  if (opencodeWsId && !opencodeWsId.startsWith("wrk_")) {
+  if (opencodeWsId && !/^(wrk|org)_/.test(opencodeWsId)) {
     return {
       ok: false,
-      error: "Workspace ID should start with wrk_ (check the URL).",
+      error: "Workspace ID should start with wrk_ or org_ (check the URL).",
     };
   }
 

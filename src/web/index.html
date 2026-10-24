@@ -1064,21 +1064,21 @@
         <div class="provider-field">
           <div class="provider-field-head">
             <label
-              for="opencode-key-input">OpenCode <code>auth</code> cookie</label>
+              for="opencode-key-input">OpenCode <code>__Host-console_session</code> cookie</label>
             <span class="connected-badge"
               id="opencode-connected-badge">✓ connected</span>
           </div>
           <input id="opencode-key-input" type="password"
-            placeholder="Fe26.2**..." autocomplete="off" spellcheck="false" />
+            placeholder="st_..." autocomplete="off" spellcheck="false" />
           <div
-            class="provider-hint">devtools → Application / Storage → Cookies → opencode.ai → <b>auth</b></div>
+            class="provider-hint">devtools → Application / Storage → Cookies → opencode.ai → <b>__Host-console_session</b></div>
           <div class="provider-field" style="margin-top:10px">
             <label for="opencode-workspace-input">Workspace ID</label>
             <input id="opencode-workspace-input" type="text"
               placeholder="wrk_01KYKN6HZ9HQ041NPY12S9ZQ11" autocomplete="off"
               spellcheck="false" />
             <div
-              class="provider-hint">from the URL: opencode.ai/workspace/<b>wrk_01…</b>/go — found on any workspace page</div>
+              class="provider-hint">from the URL: opencode.ai/console/<b>wrk_01…</b>/go — found on any console page</div>
           </div>
           <button class="provider-connect"
             id="opencode-connect">Connect OpenCode</button>
@@ -1088,7 +1088,7 @@
         <a class="back-to-dash" id="back-to-dash">← back to dashboard</a>
         <div class="key-help">
         Stored locally on this machine. Only used to poll your own usage.<br>
-        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> session-token cookie &nbsp;|&nbsp; <b>OpenCode:</b> auth
+        <b>Claude:</b> sessionKey &nbsp;|&nbsp; <b>ChatGPT:</b> session-token cookie &nbsp;|&nbsp; <b>OpenCode:</b> __Host-console_session
       </div>
       </div>
     </div>

@@ -4,7 +4,9 @@
  * Maps the console's `GET /console/api/go/status` JSON onto the
  * rolling/weekly/monthly windows the UI renders. The subscription carries
  * `access.meters.{fiveHour,week,month}`, each with micro-cent usage/limit
- * (serialized as strings) and an ISO `resetsAt`.
+ * (serialized as strings) and an ISO `resetsAt`. `access.endsAt` closes the
+ * paid period — the console shows it as "Renews …" (or "Ends …" once
+ * `cancelAtPeriodEnd` is set).
  */
 
 export interface OCUsageWindow {
@@ -13,10 +15,21 @@ export interface OCUsageWindow {
   usagePercent: number;
 }
 
+/** Billing state of the Go subscription, as the console reports it. */
+export interface OCSubscription {
+  /** End of the current paid period (ISO). */
+  endsAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  /** Set after a failed renewal charge, when it will be retried. */
+  renewalRetryAt: string | null;
+  renewalAuthorizationRequired: boolean;
+}
+
 export interface OCUsageResponse {
   rollingUsage: OCUsageWindow;
   weeklyUsage: OCUsageWindow;
   monthlyUsage: OCUsageWindow;
+  subscription: OCSubscription;
 }
 
 interface OCMeter {
@@ -64,8 +77,18 @@ export function parseOpenCodeUsage(
         " — visit opencode.ai/go to subscribe first",
     );
   }
-  const access = (body as { access?: unknown }).access as
-    | { meters?: Record<string, OCMeter> }
+  const sub = body as {
+    access?: unknown;
+    cancelAtPeriodEnd?: boolean;
+    renewalRetryAt?: string | null;
+    renewalAuthorizationRequired?: boolean;
+  };
+  const access = sub.access as
+    | {
+      endsAt?: string | null;
+      cancelAtPeriodEnd?: boolean;
+      meters?: Record<string, OCMeter>;
+    }
     | null
     | undefined;
   if (!access || typeof access !== "object") {
@@ -79,5 +102,11 @@ export function parseOpenCodeUsage(
     rollingUsage: meterWindow(meters.fiveHour, now),
     weeklyUsage: meterWindow(meters.week, now),
     monthlyUsage: meterWindow(meters.month, now),
+    subscription: {
+      endsAt: access.endsAt ?? null,
+      cancelAtPeriodEnd: !!(sub.cancelAtPeriodEnd || access.cancelAtPeriodEnd),
+      renewalRetryAt: sub.renewalRetryAt ?? null,
+      renewalAuthorizationRequired: !!sub.renewalAuthorizationRequired,
+    },
   };
 }

@@ -106,3 +106,14 @@ Deno.test("throws when access is paused", () => {
     "paused",
   );
 });
+
+Deno.test("carries the paid period end and renewal state", () => {
+  const r = parseOpenCodeUsage(status({}), NOW);
+
+  assertEquals(r.subscription, {
+    endsAt: "2026-11-01T00:00:00.000Z",
+    cancelAtPeriodEnd: false,
+    renewalRetryAt: null,
+    renewalAuthorizationRequired: false,
+  });
+});

@@ -8,6 +8,7 @@
 
 import type { ClaudeSubscriptionDetails } from "../providers/claude.ts";
 import type { ChatGPTAccountCheck } from "../providers/chatgpt.ts";
+import type { OCSubscription } from "../providers/opencode.ts";
 import { expiryUrgency, type ResetUrgency } from "./resets.ts";
 
 /** renews = will charge again; ends = cancelled, access stops; trial = trial ends. */
@@ -92,6 +93,29 @@ export function chatgptSubscription(
   const renews = toIso(e.renews_at) ?? expires;
   if (renews) return view("renews", renews, e.billing_period, warning, now);
   return null;
+}
+
+export function opencodeSubscription(
+  s: OCSubscription | null | undefined,
+  now = Date.now(),
+): SubscriptionView | null {
+  const at = toIso(s?.endsAt);
+  if (!s || !at) return null;
+  const retry = toIso(s.renewalRetryAt);
+  const warning = retry
+    ? "Renewal payment failed — retrying " +
+      new Date(retry).toLocaleDateString()
+    : s.renewalAuthorizationRequired
+    ? "Renewal payment needs your approval"
+    : null;
+  // Go is billed monthly; the status payload doesn't carry the interval.
+  return view(
+    s.cancelAtPeriodEnd ? "ends" : "renews",
+    at,
+    "monthly",
+    warning,
+    now,
+  );
 }
 
 export function subscriptionVerb(kind: SubscriptionKind): string {

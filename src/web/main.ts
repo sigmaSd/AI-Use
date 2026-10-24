@@ -40,6 +40,7 @@ import {
 import {
   chatgptSubscription,
   claudeSubscription,
+  opencodeSubscription,
   subscriptionVerb,
   type SubscriptionView,
 } from "./ui/subscription.ts";
@@ -754,7 +755,7 @@ function renderResets(
 
 // ---- subscription renewal / end ----
 function renderSubscription(
-  provider: "claude" | "chatgpt",
+  provider: "claude" | "chatgpt" | "opencode",
   sub: SubscriptionView | null,
 ): void {
   const summary = byId(provider + "-sub-summary");
@@ -858,6 +859,12 @@ function fetchUsageOnce() {
       "chatgpt",
       hasChatGPT
         ? chatgptSubscription(body.chatgpt?.subscription ?? null)
+        : null,
+    );
+    renderSubscription(
+      "opencode",
+      hasOpenCode
+        ? opencodeSubscription(body.opencode?.usage?.subscription)
         : null,
     );
     lastFetchedAt = body.lastFetchedAt;

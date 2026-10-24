@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import {
   chatgptSubscription,
   claudeSubscription,
+  opencodeSubscription,
   toIso,
 } from "./subscription.ts";
 
@@ -115,4 +116,47 @@ Deno.test("chatgptSubscription: cancels_at wins over renews_at", () => {
     },
   }, NOW);
   assertEquals(v?.kind, "ends");
+});
+
+const opencodeActive = {
+  endsAt: "2026-11-01T00:00:00.000Z",
+  cancelAtPeriodEnd: false,
+  renewalRetryAt: null,
+  renewalAuthorizationRequired: false,
+};
+
+Deno.test("opencodeSubscription: renews at the end of the paid period", () => {
+  assertEquals(opencodeSubscription(opencodeActive, NOW), {
+    kind: "renews",
+    at: "2026-11-01T00:00:00.000Z",
+    interval: "monthly",
+    urgency: "calm",
+    warning: null,
+  });
+});
+
+Deno.test("opencodeSubscription: cancelled plan ends", () => {
+  const v = opencodeSubscription(
+    { ...opencodeActive, cancelAtPeriodEnd: true },
+    NOW,
+  );
+  assertEquals(v?.kind, "ends");
+  assertEquals(v?.at, "2026-11-01T00:00:00.000Z");
+});
+
+Deno.test("opencodeSubscription: failed renewal warns", () => {
+  const v = opencodeSubscription(
+    { ...opencodeActive, renewalRetryAt: "2026-11-02T00:00:00.000Z" },
+    NOW,
+  );
+  assertEquals(v?.kind, "renews");
+  assertEquals(v?.warning?.startsWith("Renewal payment failed"), true);
+});
+
+Deno.test("opencodeSubscription: no period end, nothing to show", () => {
+  assertEquals(
+    opencodeSubscription({ ...opencodeActive, endsAt: null }, NOW),
+    null,
+  );
+  assertEquals(opencodeSubscription(null, NOW), null);
 });
